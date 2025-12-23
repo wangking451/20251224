@@ -1,0 +1,651 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  ShoppingCart, MapPin, CreditCard, Loader2, AlertTriangle, 
+  ChevronLeft, ChevronRight, Lock, Shield, X, Plus, Minus, 
+  Search, Menu, Globe, DollarSign, Zap, Package, Truck, Star,
+  MessageCircle, Send, Image as ImageIcon, Check, Edit2, Trash2,
+  Calendar, Clock, User, Mail, Phone, Hash, FileText, Upload,
+  Download, Filter, SortAsc, SortDesc, Eye, EyeOff, Settings,
+  LogOut, Users, BarChart, Sliders, Rewind, Play, Pause, SkipForward
+} from 'lucide-react';
+import { PRODUCTS as allProducts, Product } from './products';
+import { t } from './src/utils/translations';
+import { formatCurrency } from './src/utils/currency';
+
+const CATEGORY_TREE: any = {};
+const categories: string[] = [];
+
+// Helper function to format price
+const formatPrice = (amount: number, currency: string) => {
+  return formatCurrency(amount, currency, 'en-US');
+};
+
+export interface CartItem extends Product {
+  quantity: number;
+  isBundleItem?: boolean;
+  bundleDiscountPrice?: number;
+}
+
+export interface StoreConfig {
+  shopName: string;
+  currency: string;
+  language: string;
+  shippingCost: number;
+  freeShippingThreshold: number;
+  taxRate: number;
+  contactEmail: string;
+  contactPhone: string;
+}
+
+const defaultConfig: StoreConfig = {
+  shopName: 'LURE MEOW',
+  currency: 'USD',
+  language: 'en',
+  shippingCost: 0,
+  freeShippingThreshold: 100,
+  taxRate: 0,
+  contactEmail: 'contact@luremeow.com',
+  contactPhone: '+1-234-567-8900'
+};
+
+const App: React.FC = () => {
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [currentView, setCurrentView] = useState<'shop' | 'checkout' | 'product'>('shop');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [language, setLanguage] = useState<'en' | 'ru' | 'ja' | 'ko' | 'es' | 'fr' | 'de'>('en');
+  const [currency, setCurrency] = useState<'USD' | 'EUR' | 'GBP' | 'JPY' | 'CNY'>('USD');
+  const [config] = useState<StoreConfig>(defaultConfig);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  const paypalConfig = {
+    clientId: 'AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA',
+    isConfigured: true
+  };
+
+  const addToCart = (product: Product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id && !item.isBundleItem);
+      if (existing) {
+        return prev.map(item =>
+          item.id === product.id && !item.isBundleItem
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const updateQuantity = (productId: string, change: number) => {
+    setCart(prev =>
+      prev.map(item =>
+        item.id === productId
+          ? { ...item, quantity: Math.max(1, item.quantity + change) }
+          : item
+      ).filter(item => item.quantity > 0)
+    );
+  };
+
+  const clearCart = () => {
+    setCart([]);
+  };
+
+  const subtotal = cart.reduce((sum, item) => {
+    const price = item.isBundleItem && item.bundleDiscountPrice ? item.bundleDiscountPrice : item.price;
+    return sum + price * item.quantity;
+  }, 0);
+
+  const shipping = subtotal >= config.freeShippingThreshold ? 0 : config.shippingCost;
+  const tax = subtotal * config.taxRate;
+  const total = subtotal + shipping + tax;
+
+  const handleProcessPayment = async (paymentMethod: string) => {
+    setIsProcessing(true);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    alert(t('Payment successful! Thank you for your order.', language));
+    clearCart();
+    setCurrentView('shop');
+    setIsProcessing(false);
+  };
+
+  const handleProductClick = (product: Product) => {
+    setSelectedProduct(product);
+    setCurrentView('product');
+  };
+
+  const handleBackToShop = () => {
+    setSelectedProduct(null);
+    setCurrentView('shop');
+  };
+
+  const handleGoToCheckout = () => {
+    if (cart.length === 0) {
+      alert(t('Your cart is empty', language));
+      return;
+    }
+    setCurrentView('checkout');
+  };
+
+  const LanguageSelector = () => {
+    const languages = [
+      { code: 'en' as const, flag: '🇬🇧', name: 'English' },
+      { code: 'ru' as const, flag: '🇷🇺', name: 'Русский' },
+      { code: 'ja' as const, flag: '🇯🇵', name: '日本語' },
+      { code: 'ko' as const, flag: '🇰🇷', name: '한국어' },
+      { code: 'es' as const, flag: '🇪🇸', name: 'Español' },
+      { code: 'fr' as const, flag: '🇫🇷', name: 'Français' },
+      { code: 'de' as const, flag: '🇩🇪', name: 'Deutsch' }
+    ];
+
+    return (
+      <div className="relative group">
+        <button className="flex items-center gap-2 px-3 py-2 bg-black/50 border border-white/20 rounded hover:border-neon-cyan transition-colors">
+          <Globe size={16} className="text-neon-cyan" />
+          <span className="text-white text-sm">{languages.find(l => l.code === language)?.flag}</span>
+        </button>
+        <div className="absolute right-0 mt-2 w-48 bg-black border border-white/20 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+          {languages.map(lang => (
+            <button
+              key={lang.code}
+              onClick={() => setLanguage(lang.code)}
+              className={`w-full px-4 py-2 text-left hover:bg-white/10 transition-colors flex items-center gap-3 ${
+                language === lang.code ? 'text-neon-cyan' : 'text-white'
+              }`}
+            >
+              <span className="text-xl">{lang.flag}</span>
+              <span className="text-sm">{lang.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const CurrencySelector = () => {
+    const currencies = [
+      { code: 'USD' as const, symbol: '$', name: 'US Dollar' },
+      { code: 'EUR' as const, symbol: '€', name: 'Euro' },
+      { code: 'GBP' as const, symbol: '£', name: 'British Pound' },
+      { code: 'JPY' as const, symbol: '¥', name: 'Japanese Yen' },
+      { code: 'CNY' as const, symbol: '¥', name: 'Chinese Yuan' }
+    ];
+
+    return (
+      <div className="relative group">
+        <button className="flex items-center gap-2 px-3 py-2 bg-black/50 border border-white/20 rounded hover:border-neon-purple transition-colors">
+          <DollarSign size={16} className="text-neon-purple" />
+          <span className="text-white text-sm font-bold">{currencies.find(c => c.code === currency)?.symbol}</span>
+        </button>
+        <div className="absolute right-0 mt-2 w-48 bg-black border border-white/20 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+          {currencies.map(curr => (
+            <button
+              key={curr.code}
+              onClick={() => setCurrency(curr.code)}
+              className={`w-full px-4 py-2 text-left hover:bg-white/10 transition-colors flex items-center gap-3 ${
+                currency === curr.code ? 'text-neon-purple' : 'text-white'
+              }`}
+            >
+              <span className="text-lg font-bold">{curr.symbol}</span>
+              <span className="text-sm">{curr.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-md border-b border-neon-cyan/30">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="font-display text-2xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink cursor-pointer"
+                onClick={handleBackToShop}>
+              {config.shopName}
+            </h1>
+          </div>
+
+          <nav className="hidden md:flex items-center gap-4">
+            <button
+              onClick={handleBackToShop}
+              className="px-4 py-2 text-sm font-medium text-white hover:text-neon-cyan transition-colors"
+            >
+              {t('Shop', language)}
+            </button>
+            <LanguageSelector />
+            <CurrencySelector />
+            <button
+              onClick={handleGoToCheckout}
+              className="relative px-4 py-2 bg-neon-cyan text-black font-bold rounded hover:bg-neon-purple transition-all flex items-center gap-2"
+            >
+              <ShoppingCart size={18} />
+              <span>{cart.length}</span>
+            </button>
+          </nav>
+
+          <button
+            className="md:hidden text-white"
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+          >
+            <Menu size={24} />
+          </button>
+        </div>
+
+        {showMobileMenu && (
+          <div className="md:hidden bg-black/95 border-t border-white/10 p-4">
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { handleBackToShop(); setShowMobileMenu(false); }}
+                className="px-4 py-2 text-left text-white hover:text-neon-cyan transition-colors"
+              >
+                {t('Shop', language)}
+              </button>
+              <div className="flex gap-2">
+                <LanguageSelector />
+                <CurrencySelector />
+              </div>
+              <button
+                onClick={() => { handleGoToCheckout(); setShowMobileMenu(false); }}
+                className="px-4 py-2 bg-neon-cyan text-black font-bold rounded hover:bg-neon-purple transition-all flex items-center justify-center gap-2"
+              >
+                <ShoppingCart size={18} />
+                <span>{t('Cart', language)} ({cart.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </header>
+
+      <main className="pt-20">
+        {currentView === 'shop' && (
+          <ShopView
+            onProductClick={handleProductClick}
+            initialSearch={searchQuery}
+            allProducts={allProducts}
+            initialCategory={selectedCategory}
+            language={language}
+            currency={currency}
+          />
+        )}
+
+        {currentView === 'product' && selectedProduct && (
+          <ProductDetailView
+            product={selectedProduct}
+            onBack={handleBackToShop}
+            onAddToCart={addToCart}
+            language={language}
+            currency={currency}
+          />
+        )}
+
+        {currentView === 'checkout' && (
+          <CheckoutView
+            cart={cart}
+            onBack={handleBackToShop}
+            onProcessPayment={handleProcessPayment}
+            isProcessing={isProcessing}
+            language={language}
+            currency={currency}
+            config={config}
+          />
+        )}
+      </main>
+    </div>
+  );
+};
+
+const ProductCard: React.FC<{
+  product: Product;
+  onClick: () => void;
+  language: string;
+  currency: string;
+}> = ({ product, onClick, language, currency }) => {
+  return (
+    <div
+      onClick={onClick}
+      className="group relative bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-xl overflow-hidden hover:border-neon-cyan transition-all duration-300 cursor-pointer shadow-lg hover:shadow-neon-cyan/50"
+    >
+      <div className="aspect-square overflow-hidden bg-black/50">
+        <img
+          src={product.image}
+          alt={product.name}
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+        />
+      </div>
+      <div className="p-4">
+        <h3 className="font-display text-lg font-bold text-white mb-2 line-clamp-1">
+          {product.name}
+        </h3>
+        <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+          {product.description}
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-neon-cyan font-bold text-xl">
+            {formatPrice(product.price, currency)}
+          </span>
+          <span className="text-xs text-gray-500 uppercase tracking-wider">
+            {product.category}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProductDetailView: React.FC<{
+  product: Product;
+  onBack: () => void;
+  onAddToCart: (product: Product) => void;
+  language: string;
+  currency: string;
+}> = ({ product, onBack, onAddToCart, language, currency }) => {
+  return (
+    <div className="pt-20 md:pt-24 pb-16 px-4 md:px-6 min-h-screen bg-gradient-to-br from-gray-900 to-black">
+      <div className="max-w-6xl mx-auto">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-neon-cyan hover:text-white font-display text-sm mb-8 tracking-wider uppercase transition-colors"
+        >
+          <ChevronLeft size={16} /> {t('Back to Shop', language)}
+        </button>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+          <div className="aspect-square rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
+
+          <div className="flex flex-col justify-center">
+            <div className="inline-block px-3 py-1 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan text-xs font-bold uppercase tracking-wider rounded mb-4 self-start">
+              {product.category}
+            </div>
+            <h1 className="font-display text-4xl md:text-5xl font-black text-white mb-6">
+              {product.name}
+            </h1>
+            <p className="text-gray-300 text-lg mb-8 leading-relaxed">
+              {product.description}
+            </p>
+            <div className="flex items-baseline gap-4 mb-8">
+              <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-purple">
+                {formatPrice(product.price, currency)}
+              </span>
+            </div>
+
+            <button
+              onClick={() => onAddToCart(product)}
+              className="w-full bg-gradient-to-r from-neon-cyan to-neon-purple hover:from-neon-purple hover:to-neon-cyan text-black font-bold py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-neon-cyan/50 text-lg"
+            >
+              <ShoppingCart size={24} />
+              {t('Add to Cart', language)}
+            </button>
+
+            <div className="mt-12 space-y-4">
+              <div className="flex items-center gap-3 text-gray-400">
+                <Package size={20} className="text-neon-cyan" />
+                <span>{t('Instant Digital Delivery', language)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-gray-400">
+                <Shield size={20} className="text-neon-cyan" />
+                <span>{t('Secure Payment', language)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-gray-400">
+                <Star size={20} className="text-neon-cyan" />
+                <span>{t('Premium Quality', language)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ShopView: React.FC<{
+  onProductClick: (p: Product) => void;
+  initialSearch: string;
+  allProducts: Product[];
+  initialCategory?: string;
+  language: string;
+  currency: string;
+}> = ({ onProductClick, initialSearch, allProducts, initialCategory, language, currency }) => {
+  const [filterCategory, setFilterCategory] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'NEW' | 'PRICE_ASC' | 'PRICE_DESC'>('NEW');
+
+  useEffect(() => {
+    if (initialCategory) setFilterCategory(initialCategory);
+  }, [initialCategory]);
+
+  const filteredProducts = allProducts.filter(p => {
+    const matchesSearch = initialSearch ? (p.name.toLowerCase().includes(initialSearch.toLowerCase()) ||
+                          p.category.toLowerCase().includes(initialSearch.toLowerCase())) : true;
+    const matchesCategory = filterCategory === 'ALL' || p.category === filterCategory;
+    return matchesSearch && matchesCategory;
+  }).sort((a, b) => {
+    if (sortBy === 'PRICE_ASC') return a.price - b.price;
+    if (sortBy === 'PRICE_DESC') return b.price - a.price;
+    return 0;
+  });
+
+  return (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 min-h-screen max-w-7xl mx-auto">
+      <button onClick={() => setFilterCategory('ALL')} className="flex items-center gap-2 text-neon-cyan hover:text-white font-display text-sm mb-8 tracking-wider uppercase">
+        <Rewind size={16} fill="currentColor"/> {t('Reset Filters', language)}
+      </button>
+
+      <div className="flex flex-col md:flex-row justify-between items-end mb-12 border-b border-neon-purple/30 pb-4 gap-4">
+        <div>
+          <div className="text-neon-pink font-display text-xs mb-2">{t('SECTOR_ACCESS', language)}</div>
+          <h1 className="font-display text-5xl text-white font-black italic uppercase text-glow-pink">
+            {filterCategory === 'ALL' ? t('GLOBAL_INVENTORY', language) : filterCategory}
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2 bg-black border border-white/20 px-3 py-2">
+          <Sliders size={14} className="text-gray-400" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="bg-transparent text-white font-display text-sm outline-none uppercase"
+          >
+            <option value="NEW">{t('NEW ARRIVALS', language)}</option>
+            <option value="PRICE_ASC">{t('PRICE: LOW // HIGH', language)}</option>
+            <option value="PRICE_DESC">{t('PRICE: HIGH // LOW', language)}</option>
+          </select>
+        </div>
+      </div>
+
+      {filteredProducts.length === 0 ? (
+        <div className="text-center py-20 border border-dashed border-white/10">
+          <div className="text-neon-yellow font-display text-2xl mb-2">{t('NO DATA FOUND', language)}</div>
+          <p className="text-gray-500">{t('Try adjusting your search parameters.', language)}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
+          {filteredProducts.map(p => (
+            <ProductCard key={p.id} product={p} onClick={() => onProductClick(p)} language={language} currency={currency} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CheckoutView: React.FC<{
+  cart: CartItem[];
+  onBack: () => void;
+  onProcessPayment: (method: string) => void;
+  isProcessing: boolean;
+  language: string;
+  currency: string;
+  config: StoreConfig;
+}> = ({ cart, onBack, onProcessPayment, isProcessing, language, currency, config }) => {
+  const [paymentMethod, setPaymentMethod] = useState<string>('PAYPAL');
+
+  const subtotal = cart.reduce((sum, item) => {
+    const price = item.isBundleItem && item.bundleDiscountPrice ? item.bundleDiscountPrice : item.price;
+    return sum + price * item.quantity;
+  }, 0);
+
+  const shipping = subtotal >= config.freeShippingThreshold ? 0 : config.shippingCost;
+  const tax = subtotal * config.taxRate;
+  const total = subtotal + shipping + tax;
+
+  if (!cart || cart.length === 0) {
+    return (
+      <div className="pt-20 md:pt-24 pb-16 px-4 md:px-6 min-h-screen bg-gradient-to-br from-gray-900 to-black">
+        <div className="max-w-4xl mx-auto text-center">
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-neon-cyan font-display text-sm mb-12 tracking-wider transition-colors mx-auto">
+            <ChevronLeft size={16}/> {t('Return to Shop', language)}
+          </button>
+          <div className="bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-xl p-12 shadow-lg">
+            <ShoppingCart size={64} className="text-gray-600 mx-auto mb-6" />
+            <h2 className="font-display text-2xl font-bold text-white mb-3">
+              {t('Your Cart is Empty', language)}
+            </h2>
+            <p className="text-gray-400 mb-8">
+              {t('Add some items to your cart before checking out', language)}
+            </p>
+            <button
+              onClick={onBack}
+              className="bg-gradient-to-r from-neon-cyan to-neon-purple hover:from-neon-purple hover:to-neon-cyan text-black font-bold py-3 px-8 rounded-xl transition-all duration-300"
+            >
+              {t('Continue Shopping', language)}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-20 md:pt-24 pb-16 px-4 md:px-6 min-h-screen bg-gradient-to-br from-gray-900 to-black">
+      <div className="max-w-6xl mx-auto">
+        <div className="mb-8 text-center">
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-neon-cyan font-display text-sm mb-6 tracking-wider transition-colors mx-auto">
+            <ChevronLeft size={16}/> {t('Return to Shop', language)}
+          </button>
+          <h1 className="font-display text-3xl md:text-4xl font-bold text-white uppercase tracking-wider mb-2">
+            {t('Secure Checkout', language)}
+          </h1>
+          <p className="text-gray-400 text-sm max-w-md mx-auto">{t('Complete your purchase with confidence', language)}</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-xl p-6 shadow-lg">
+              <h2 className="font-display text-xl font-bold text-white mb-6">
+                {t('Shipping Information', language)}
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder={t('Full Name', language)}
+                  className="w-full bg-black/50 border border-white/10 p-3.5 text-white text-sm focus:border-neon-cyan outline-none transition-all rounded-lg"
+                />
+                <input
+                  type="email"
+                  placeholder={t('Email Address', language)}
+                  className="w-full bg-black/50 border border-white/10 p-3.5 text-white text-sm focus:border-neon-cyan outline-none transition-all rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-xl p-6 shadow-lg">
+              <h2 className="font-display text-xl font-bold text-white mb-6">
+                {t('Payment', language)}
+              </h2>
+              <div className="space-y-3">
+                {['PAYPAL', 'CARD', 'CRYPTO'].map((method) => (
+                  <button
+                    key={method}
+                    onClick={() => setPaymentMethod(method)}
+                    className={`w-full p-4 border rounded-lg transition-all ${
+                      paymentMethod === method
+                        ? 'border-neon-cyan bg-neon-cyan/5'
+                        : 'border-white/10 hover:border-white/30'
+                    }`}
+                  >
+                    <span className="text-white font-medium">{method}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-1">
+            <div className="bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-xl p-6 sticky top-24 shadow-lg">
+              <h3 className="font-display text-xl font-bold text-white mb-6">
+                {t('Order Summary', language)}
+              </h3>
+
+              <div className="space-y-4 mb-6">
+                {cart.map(item => {
+                  const itemPrice = item.isBundleItem && item.bundleDiscountPrice ? item.bundleDiscountPrice : item.price;
+                  const itemTotal = itemPrice * item.quantity;
+                  return (
+                    <div key={item.id} className="flex justify-between text-sm pb-4 border-b border-white/5">
+                      <div className="flex-1">
+                        <div className="text-white text-sm mb-1">{item.name}</div>
+                        <div className="text-gray-500 text-xs">
+                          {formatPrice(itemPrice, currency)} × {item.quantity}
+                        </div>
+                      </div>
+                      <span className="text-white font-medium text-sm">{formatPrice(itemTotal, currency)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3 py-4 border-t border-white/10">
+                <div className="flex justify-between text-gray-400 text-sm">
+                  <span>{t('Subtotal', language)}</span>
+                  <span className="text-white">{formatPrice(subtotal, currency)}</span>
+                </div>
+                <div className="flex justify-between text-gray-400 text-sm">
+                  <span>{t('Shipping', language)}</span>
+                  <span className="text-white">
+                    {shipping === 0 ? <span className="text-green-400 font-medium">{t('FREE', language)}</span> : formatPrice(shipping, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-lg font-bold pt-3 border-t border-white/10">
+                  <span className="text-white">{t('Total', language)}</span>
+                  <span className="text-neon-cyan">{formatPrice(total, currency)}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => onProcessPayment(paymentMethod)}
+                disabled={isProcessing}
+                className="w-full mt-6 bg-gradient-to-r from-neon-cyan to-neon-purple hover:from-neon-purple hover:to-neon-cyan text-black font-bold py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg text-lg"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="animate-spin" size={20}/>
+                    <span>{t('Processing Payment...', language)}</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock size={20}/>
+                    <span>{t('Pay Now', language)} {formatPrice(total, currency)}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;

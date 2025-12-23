@@ -1,0 +1,2681 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { ShoppingBag, X, ArrowRight, Zap, Play, Disc, Music, Search, Radio, Rewind, FastForward, Sliders, Monitor, Globe, ChevronDown, ChevronLeft, ChevronRight, Star, Activity, Heart, Truck, Shield, Cpu, Terminal, MessageSquare, ExternalLink, CheckCircle, Package, Lock, CreditCard, ChevronUp, Facebook, Instagram, Twitter, Loader2, MapPin, Mail, User, Bitcoin, Filter, Layers, Timer, Plus, ThumbsUp, MessageCircle, Tag, Menu, HelpCircle, Send, Box, RefreshCw, Camera, Radar, FileText, FileKey, Smartphone, QrCode, Wallet, DollarSign, Trash2, Film, Volume2, VolumeX, Maximize2 } from 'lucide-react';
+import { Product, CartItem, ViewState } from './types';
+import { REVIEWS_MOCK } from './products';
+import { fetchProducts, createCheckoutSession } from './services/api';
+import CSVImporter from './components/CSVImporter';
+
+// --- CONSTANTS & DATA ---
+
+// 定义二级分类结构 - 更新为常见情趣用品分类
+const CATEGORY_TREE: Record<string, string[]> = {
+  'VIBES': ['Wands', 'Rabbits', 'Bullets', 'App-Controlled', 'Remote'],
+  'DILDOS': ['Realistic', 'Fantasy', 'Glass & Metal', 'Strap-Ons', 'Double-Ended'],
+  'ANAL': ['Plugs', 'Beads', 'Prostate', 'Training Kits', 'Douches'],
+  'MALE': ['Masturbators', 'Strokers', 'Cock Rings', 'Pumps'],
+  'BONDAGE': ['Restraints', 'Cuffs & Collars', 'Impact', 'Masks', 'Rope'],
+  'LINGERIE': ['Harnesses', 'Bodystockings', 'Latex', 'Costumes'],
+  'FLUIDS': ['Lubricants', 'Massage Oils', 'Cleaners', 'Stimulants']
+};
+
+// --- UTILS ---
+const RetroButton: React.FC<{ 
+  children: React.ReactNode; 
+  onClick?: () => void; 
+  variant?: 'primary' | 'secondary' | 'action' | 'ghost';
+  className?: string;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+}> = ({ children, onClick, variant = 'primary', className = '', icon, disabled }) => {
+  const styles = {
+    primary: "bg-gradient-to-r from-neon-purple to-neon-pink text-white shadow-neon-pink border-none",
+    secondary: "bg-transparent border-2 border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:text-black shadow-neon-cyan",
+    action: "bg-neon-yellow text-black font-bold hover:bg-white",
+    ghost: "bg-transparent text-gray-400 hover:text-neon-cyan border border-transparent hover:border-neon-cyan/30"
+  };
+
+  return (
+    <button 
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative px-8 py-3 font-display font-bold text-sm uppercase tracking-wider skew-button flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+    >
+      <span className="transform group-hover:skew-x-2 transition-transform inline-flex items-center gap-2">
+        {icon}
+        {children}
+      </span>
+    </button>
+  );
+};
+
+// --- COMPONENTS ---
+
+// Helper for video item to manage refs
+const SocialVideoItem: React.FC<{ product: Product; onClick: () => void }> = ({ product, onClick }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    const handleMouseEnter = () => {
+        if (videoRef.current) {
+            videoRef.current.play().catch(e => console.log("Auto-play prevented", e));
+        }
+    };
+
+    const handleMouseLeave = () => {
+        if (videoRef.current) {
+            videoRef.current.pause();
+            videoRef.current.currentTime = 0; // Reset to start
+        }
+    };
+
+    return (
+        <div 
+            className="flex-shrink-0 w-[280px] md:w-[320px] aspect-[9/16] relative group border border-white/20 hover:border-neon-cyan transition-colors snap-center bg-gray-900 overflow-hidden cursor-pointer"
+            onClick={onClick}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+        >
+            {/* Video Element */}
+            <video 
+                ref={videoRef}
+                src={product.socialVideo} 
+                loop 
+                muted 
+                playsInline 
+                // Removed autoPlay to make it default closed
+                className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"
+            />
+            
+            {/* Play Icon Indicator (visible when not hovering/playing) */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:opacity-0 transition-opacity duration-300">
+                <div className="w-12 h-12 rounded-full bg-black/50 border border-white/30 flex items-center justify-center backdrop-blur-sm">
+                    <Play size={20} className="text-white fill-white ml-1" />
+                </div>
+            </div>
+
+            {/* Overlays */}
+            <div className="absolute top-4 left-4 z-20 bg-red-600 text-white text-[10px] font-bold px-2 py-1 flex items-center gap-1 font-display">
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span> REC
+            </div>
+            
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-90"></div>
+            
+            <div className="absolute bottom-0 left-0 w-full p-6">
+                <div className="text-neon-yellow font-display text-xs mb-1">{product.category}</div>
+                <h3 className="text-white font-display font-bold text-xl uppercase italic mb-2">{product.name}</h3>
+                <div className="flex justify-between items-center">
+                    <span className="text-white font-display">${product.price}</span>
+                    <button className="bg-neon-cyan text-black p-2 rounded-full hover:scale-110 transition-transform">
+                        <ArrowRight size={16} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Scanline */}
+            <div className="absolute inset-0 bg-[url('https://media.giphy.com/media/xT9Igk31elskVqFfGM/giphy.gif')] opacity-[0.05] pointer-events-none mix-blend-overlay pointer-events-none"></div>
+        </div>
+    );
+};
+
+// New Component: Social Video Feed (Vertical Video)
+const SocialVideoFeed: React.FC<{ products: Product[]; onProductClick: (p: Product) => void }> = ({ products, onProductClick }) => {
+  const videoProducts = products.filter(p => p.socialVideo);
+  
+  if (videoProducts.length === 0) return null;
+
+  return (
+    <section className="py-12 md:py-24 bg-black border-y border-neon-purple/30 relative overflow-hidden">
+        {/* Background Grid Accent */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(176,38,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(176,38,255,0.1)_1px,transparent_1px)] bg-[size:40px_40px] opacity-20 pointer-events-none"></div>
+
+        <div className="max-w-7xl mx-auto px-4 md:px-6 relative z-10">
+            <div className="flex items-center justify-between mb-8 md:mb-12">
+                <div>
+                   <div className="text-neon-pink text-xs font-display font-bold tracking-widest mb-2 animate-pulse">LIVE FEED</div>
+                   <h2 className="font-display text-3xl md:text-4xl text-white italic font-black uppercase flex items-center gap-4">
+                      NEBULA <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-purple">STREAM</span> <Film className="text-neon-cyan" />
+                   </h2>
+                </div>
+                <div className="hidden md:flex gap-2 text-xs font-display text-gray-500 uppercase">
+                    <span className="flex items-center gap-1"><Activity size={12}/> Trending Now</span>
+                    <span>//</span>
+                    <span className="flex items-center gap-1"><Globe size={12}/> Global Sync</span>
+                </div>
+            </div>
+
+            <div className="flex overflow-x-auto gap-4 md:gap-6 pb-8 snap-x snap-mandatory no-scrollbar">
+                {videoProducts.map((product) => (
+                    <SocialVideoItem key={product.id} product={product} onClick={() => onProductClick(product)} />
+                ))}
+            </div>
+        </div>
+    </section>
+  );
+};
+
+// Featured Products Section with Category Filter
+const FeaturedProductsSection: React.FC<{
+    allProducts: Product[];
+    onProductClick: (p: Product) => void;
+    onNavigate: (v: ViewState) => void;
+}> = ({ allProducts, onProductClick, onNavigate }) => {
+    const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+    
+    const categories = ['ALL', ...Object.keys(CATEGORY_TREE)];
+    
+    const filteredProducts = selectedCategory === 'ALL' 
+        ? allProducts 
+        : allProducts.filter(p => p.category === selectedCategory);
+    
+    const displayProducts = filteredProducts.slice(0, 12);
+    
+    return (
+        <section className="py-12 md:py-24 px-6 max-w-7xl mx-auto relative z-10">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b-2 border-neon-pink pb-4">
+                <h2 className="font-display text-4xl text-white italic font-black transform -skew-x-6 text-glow-pink mb-4 md:mb-0">
+                    NEW_DROPS
+                </h2>
+                <button 
+                    onClick={() => onNavigate('SHOP')} 
+                    className="text-neon-cyan hover:text-white font-display text-sm uppercase tracking-widest flex items-center gap-2 group"
+                >
+                    <span>View All Assets</span>
+                    <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+            </div>
+            
+            <div className="mb-8 md:mb-12">
+                <div className="flex flex-wrap gap-2 md:gap-3">
+                    {categories.map((cat) => {
+                        const isActive = selectedCategory === cat;
+                        return (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`group relative px-4 md:px-6 py-2.5 md:py-3 font-display text-xs md:text-sm font-bold uppercase tracking-wider transition-all duration-300 overflow-hidden ${
+                                    isActive 
+                                        ? 'bg-neon-pink text-black border-2 border-neon-pink shadow-[0_0_20px_rgba(255,0,255,0.5)]' 
+                                        : 'bg-black/40 text-gray-400 border-2 border-white/10 hover:border-neon-pink/50 hover:text-white'
+                                }`}
+                            >
+                                {!isActive && (
+                                    <div className="absolute inset-0 bg-gradient-to-r from-neon-pink/0 via-neon-pink/20 to-neon-pink/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
+                                )}
+                                
+                                <span className="relative z-10">{cat}</span>
+                                
+                                {isActive && (
+                                    <div className="absolute inset-0 border-2 border-neon-pink animate-ping opacity-20"></div>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+                
+                <div className="mt-4 flex items-center gap-3 text-xs font-display uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-neon-cyan">
+                        <Package size={14} />
+                        <span>Showing {displayProducts.length} of {filteredProducts.length}</span>
+                    </div>
+                    {selectedCategory !== 'ALL' && (
+                        <div className="text-gray-500">
+                            // Category: <span className="text-neon-yellow">{selectedCategory}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+            
+            {displayProducts.length === 0 ? (
+                <div className="text-center py-20 border border-dashed border-white/10 bg-black/20">
+                    <div className="text-neon-yellow font-display text-2xl mb-2">NO DATA FOUND</div>
+                    <p className="text-gray-500">No products in this category yet.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
+                    {displayProducts.map((p, index) => (
+                        <div 
+                            key={p.id}
+                            className="opacity-0 animate-fade-in"
+                            style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'forwards' }}
+                        >
+                            <ProductCard product={p} onClick={() => onProductClick(p)} />
+                        </div>
+                    ))}
+                </div>
+            )}
+            
+            {filteredProducts.length > 12 && (
+                <div className="text-center mt-12">
+                    <button 
+                        onClick={() => onNavigate('SHOP')}
+                        className="group px-8 py-4 bg-black border-2 border-neon-cyan hover:bg-neon-cyan/10 text-white font-display font-bold uppercase text-sm tracking-wider transition-all transform hover:scale-105 flex items-center gap-3 mx-auto"
+                    >
+                        <span>Load More Products</span>
+                        <div className="w-8 h-8 bg-neon-cyan/20 border border-neon-cyan flex items-center justify-center group-hover:bg-neon-cyan group-hover:text-black transition-colors">
+                            <ChevronDown size={16} className="text-neon-cyan group-hover:text-black" />
+                        </div>
+                    </button>
+                    <p className="text-gray-500 text-xs mt-4 font-display uppercase tracking-wider">
+                        {filteredProducts.length - 12} more items available
+                    </p>
+                </div>
+            )}
+        </section>
+    );
+};
+
+// Updated: Hero Carousel using internal slides data
+const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavigate }) => {
+  const slides = [
+    {
+      id: 1,
+      image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070',
+      subtitle: 'EST. 2084 // TOKYO SECTOR 7',
+      title1: 'Digital',
+      title2: 'Sunset',
+      desc: 'Bridging the gap between biological desire and digital perfection. High-fidelity haptics for the modern soul.',
+      btn1: 'Enter Shop',
+      btn2: 'View Lookbook'
+    },
+    {
+      id: 2,
+      image: 'https://images.unsplash.com/photo-1574169208507-84376144848b?auto=format&fit=crop&q=80&w=2070', 
+      subtitle: 'SYSTEM UPGRADE AVAILABLE',
+      title1: 'Cyber',
+      title2: 'Flesh',
+      desc: 'Experience the new wave of sensory augmentation. Resistance is futile when pleasure is this precise.',
+      btn1: 'Shop Now',
+      btn2: 'Learn More'
+    },
+    {
+      id: 3,
+      image: 'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&q=80&w=2070', 
+      subtitle: 'SECURE ENCRYPTED UPLINK',
+      title1: 'Neural',
+      title2: 'Sync',
+      desc: 'Direct interface protocols for maximum transmission speed. Your secrets are safe in the void.',
+      btn1: 'Connect',
+      btn2: 'Protocol'
+    }
+  ];
+
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrent(prev => (prev + 1) % slides.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [slides.length]);
+
+  const nextSlide = () => setCurrent(prev => (prev + 1) % slides.length);
+  const prevSlide = () => setCurrent(prev => (prev - 1 + slides.length) % slides.length);
+  
+  // Simple handler mapping
+  const getAction = (text: string) => {
+    if (text.includes("Shop") || text.includes("Connect")) return () => onNavigate('SHOP');
+    if (text.includes("Lookbook")) return () => onNavigate('LOOKBOOK');
+    return () => onNavigate('SHOP');
+  }
+
+  return (
+    <section className="relative h-[85vh] flex flex-col justify-center items-center text-center px-6 overflow-hidden group border-b border-neon-purple/30">
+        {slides.map((slide, index) => (
+            <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === current ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
+                {/* Background Image with Zoom Effect */}
+                <div 
+                    className="absolute inset-0 bg-cover bg-center opacity-40 transition-transform duration-[8000ms] ease-linear" 
+                    style={{ 
+                        backgroundImage: `url('${slide.image}')`, 
+                        transform: index === current ? 'scale(1.1)' : 'scale(1)' 
+                    }}
+                ></div>
+                {/* Gradients */}
+                <div className="absolute inset-0 bg-gradient-to-t from-synth-bg via-synth-bg/60 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent"></div>
+            </div>
+        ))}
+
+        {/* Content - Using key to trigger re-animation */}
+        <div key={current} className="relative z-20 max-w-5xl animate-fade-in">
+             <div className="text-neon-cyan font-display tracking-[0.5em] text-sm mb-4 animate-pulse">
+                {slides[current].subtitle}
+             </div>
+             <h1 className="font-display text-5xl md:text-9xl font-black uppercase italic leading-none mb-6 transform -skew-x-6 drop-shadow-[4px_4px_0px_rgba(255,0,255,1)]">
+               <span className="text-white block opacity-0 animate-[fadeIn_0.5s_ease-out_forwards]">{slides[current].title1}</span>
+               <span className="text-transparent bg-clip-text bg-gradient-to-b from-neon-yellow to-neon-pink block mt-2 opacity-0 animate-[fadeIn_0.5s_ease-out_0.2s_forwards]">{slides[current].title2}</span>
+             </h1>
+             <p className="font-body text-gray-300 text-lg md:text-xl max-w-xl mx-auto mb-12 tracking-wide uppercase font-bold border-l-4 border-neon-purple pl-6 text-left opacity-0 animate-[fadeIn_0.5s_ease-out_0.4s_forwards]">
+                {slides[current].desc}
+             </p>
+             <div className="flex gap-6 justify-center opacity-0 animate-[fadeIn_0.5s_ease-out_0.6s_forwards]">
+                <RetroButton onClick={getAction(slides[current].btn1)}>{slides[current].btn1}</RetroButton>
+                <RetroButton variant="secondary" onClick={getAction(slides[current].btn2)}>{slides[current].btn2}</RetroButton>
+             </div>
+        </div>
+        
+        {/* Navigation Arrows */}
+        <button onClick={prevSlide} className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm group-hover:opacity-100 opacity-0 transition-opacity duration-300">
+            <ChevronLeft size={48} />
+        </button>
+        <button onClick={nextSlide} className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm group-hover:opacity-100 opacity-0 transition-opacity duration-300">
+            <ChevronRight size={48} />
+        </button>
+
+        {/* Dots */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 flex gap-4">
+            {slides.map((_, idx) => (
+                <button 
+                    key={idx} 
+                    onClick={() => setCurrent(idx)}
+                    className={`h-1 transition-all duration-300 ${idx === current ? 'w-12 bg-neon-pink shadow-[0_0_10px_#ff00ff]' : 'w-4 bg-white/30 hover:bg-white'}`}
+                />
+            ))}
+        </div>
+        
+        {/* Scanline */}
+        <div className="absolute inset-0 bg-[url('https://media.giphy.com/media/xT9Igk31elskVqFfGM/giphy.gif')] opacity-[0.03] pointer-events-none z-10 mix-blend-overlay bg-repeat"></div>
+    </section>
+  );
+}
+
+// New Promo Component: Flash Sale
+const LimitedTimeOffer: React.FC = () => {
+  // Initialize countdown (4 hours 20 minutes in seconds)
+  const [timeLeft, setTimeLeft] = useState(15600);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-neon-pink/10 to-neon-purple/10 border border-neon-pink/30 p-4 mb-6 flex items-center justify-between relative overflow-hidden group shadow-[0_0_15px_rgba(255,0,255,0.2)]">
+      <div className="absolute top-0 left-0 w-1 h-full bg-neon-pink animate-pulse"></div>
+      <div className="flex items-center gap-3 relative z-10">
+         <div className="w-10 h-10 bg-neon-pink/20 rounded-full flex items-center justify-center text-neon-pink animate-pulse">
+            <Timer size={20} className="animate-spin-slow" />
+         </div>
+         <div>
+            <div className="text-neon-pink font-display font-bold text-sm tracking-widest flex items-center gap-2">
+              FLASH PROTOCOL <span className="bg-neon-pink text-black text-[10px] px-1 font-black animate-pulse">ACTIVE</span>
+            </div>
+            <div className="text-xs text-gray-400 font-display font-bold">20% CREDIT REBATE ENDING SOON</div>
+         </div>
+      </div>
+      <div className="font-display font-black text-2xl text-white tracking-widest relative z-10 tabular-nums text-glow-pink">
+        {formatTime(timeLeft)}
+      </div>
+      
+      {/* Scanline effect */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neon-pink/5 to-transparent bg-[length:100%_4px] animate-grid-move pointer-events-none"></div>
+    </div>
+  );
+};
+
+// New Promo Component: Bundle
+const BundleDeal: React.FC<{ mainProduct: Product }> = ({ mainProduct }) => (
+  <div className="bg-white/5 border border-neon-yellow/30 p-5 mb-8 relative group hover:border-neon-yellow transition-colors">
+      <div className="absolute -top-3 -right-3">
+         <span className="relative flex h-6 w-6">
+           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neon-yellow opacity-75"></span>
+           <span className="relative inline-flex rounded-full h-6 w-6 bg-neon-yellow"></span>
+         </span>
+         <Tag size={14} className="absolute top-1.5 left-1.5 text-black" />
+      </div>
+      
+      <h3 className="text-neon-yellow font-display text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+        <Layers size={16}/> System Upgrade Available
+      </h3>
+      
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+              <div className="w-16 h-16 bg-black border border-white/20 p-1 flex-shrink-0">
+                <img src={mainProduct.images[0]} className="w-full h-full object-cover opacity-80"/>
+              </div>
+              <div className="text-gray-500"><Plus size={20}/></div>
+              <div className="w-16 h-16 bg-black border border-white/20 flex items-center justify-center relative flex-shrink-0">
+                 <div className="absolute inset-0 bg-gradient-to-br from-neon-purple/20 to-transparent"></div>
+                 <Package size={24} className="text-neon-purple opacity-50"/>
+              </div>
+          </div>
+          
+          <div className="flex-1 pl-0 sm:pl-2 w-full sm:w-auto flex justify-between sm:block items-center">
+              <div>
+                  <div className="font-display text-white text-sm">Mystery Component</div>
+                  <div className="text-xs text-gray-500">Compatible Add-on</div>
+              </div>
+              <div className="text-right sm:hidden">
+                 <div className="text-xs text-gray-500 line-through">$25.00</div>
+                 <div className="text-neon-yellow font-display font-bold">FREE</div>
+              </div>
+          </div>
+          
+          <div className="text-right hidden sm:block">
+             <div className="text-xs text-gray-500 line-through">$25.00</div>
+             <div className="text-neon-yellow font-display font-bold">FREE</div>
+          </div>
+      </div>
+      
+      <button className="w-full mt-4 bg-white/10 hover:bg-neon-yellow hover:text-black border border-white/20 hover:border-neon-yellow text-white text-xs font-display font-bold py-2 transition-all uppercase tracking-wider">
+         Claim Bundle Offer
+      </button>
+  </div>
+);
+
+// New Promo Component: Volume Discount (Tiered Pricing)
+const VolumeDiscount: React.FC<{ price: number; selectedQty: number; onSelectQty: (qty: number) => void }> = ({ price, selectedQty, onSelectQty }) => {
+  const tiers = [
+    { qty: 1, discount: 0, label: 'STANDARD' },
+    { qty: 2, discount: 10, label: 'DUAL SYNC' },
+    { qty: 3, discount: 20, label: 'HIVE MIND' }
+  ];
+  
+  return (
+    <div className="grid grid-cols-3 gap-2 mb-6">
+      {tiers.map((tier) => {
+        const discountedPrice = price * (1 - tier.discount / 100);
+        const totalPrice = (discountedPrice * tier.qty).toFixed(2);
+        
+        return (
+          <div 
+            key={tier.qty} 
+            onClick={() => onSelectQty(tier.qty)}
+            className={`border ${selectedQty === tier.qty ? 'border-neon-cyan bg-neon-cyan/10' : 'border-white/10 hover:border-white/30'} p-3 flex flex-col items-center cursor-pointer transition-all`}
+          >
+            <div className="text-xs text-gray-400 font-display mb-1">{tier.label}</div>
+            <div className="font-bold text-white text-lg">{tier.qty}x</div>
+            {tier.discount > 0 ? (
+              <>
+                <div className="text-neon-yellow text-xs font-bold">-{tier.discount}%</div>
+                <div className="text-white text-xs mt-1">${totalPrice}</div>
+              </>
+            ) : (
+              <div className="text-gray-500 text-xs">${price}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// New Component: Demand Indicator (Social Proof)
+const DemandIndicator: React.FC = () => (
+    <div className="flex items-center gap-2 text-xs text-neon-pink mb-4 animate-pulse">
+        <Activity size={14} />
+        <span className="font-display tracking-wider">HIGH TRAFFIC: 24 NODES VIEWING THIS ASSET</span>
+    </div>
+);
+
+// New Component: Write Review Modal
+const WriteReviewModal: React.FC<{ isOpen: boolean; onClose: () => void; onSubmit: (review: any) => void }> = ({ isOpen, onClose, onSubmit }) => {
+  const [rating, setRating] = useState(5);
+  const [alias, setAlias] = useState('');
+  const [content, setContent] = useState('');
+
+  if (!isOpen) return null;
+  
+  const handleSubmit = () => {
+      onSubmit({ user: alias || 'Anonymous_Node', rating, content, date: new Date().toISOString().split('T')[0] });
+      onClose();
+      setAlias('');
+      setContent('');
+      setRating(5);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" onClick={onClose}>
+        <div className="bg-synth-panel border border-neon-purple p-8 max-w-md w-full relative skew-x-[-2deg] shadow-[0_0_50px_rgba(176,38,255,0.3)] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X /></button>
+            <h2 className="font-display text-2xl text-white mb-2 uppercase italic">Transmit Log</h2>
+            <p className="text-gray-400 text-sm mb-6">Share your neural feedback with the network.</p>
+            
+            <div className="space-y-4">
+                <div>
+                    <label className="text-xs text-neon-cyan font-bold uppercase block mb-2">Rating</label>
+                    <div className="flex gap-2 text-neon-yellow">
+                        {[1,2,3,4,5].map(i => <Star key={i} fill={i <= rating ? "currentColor" : "none"} className="cursor-pointer hover:scale-110 transition-transform" onClick={() => setRating(i)} />)}
+                    </div>
+                </div>
+                <div>
+                    <label className="text-xs text-neon-cyan font-bold uppercase block mb-2">Alias</label>
+                    <input value={alias} onChange={e => setAlias(e.target.value)} type="text" className="w-full bg-black border border-white/20 p-3 text-white outline-none focus:border-neon-pink font-display" placeholder="USER_ID" />
+                </div>
+                <div>
+                    <label className="text-xs text-neon-cyan font-bold uppercase block mb-2">Data</label>
+                    <textarea value={content} onChange={e => setContent(e.target.value)} className="w-full bg-black border border-white/20 p-3 text-white outline-none focus:border-neon-pink font-body h-32" placeholder="Enter transmission..." />
+                </div>
+                <RetroButton onClick={handleSubmit} className="w-full">UPLOAD TO MAINFRAME</RetroButton>
+            </div>
+        </div>
+    </div>
+  );
+}
+
+const DesktopCategoryNav: React.FC<{ onSelect: (cat: string, subCat?: string) => void }> = ({ onSelect }) => {
+  return (
+    <div className="hidden md:block fixed top-20 left-0 w-full bg-black/90 backdrop-blur-md border-b border-white/10 z-40 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+      <div className="max-w-7xl mx-auto flex justify-center">
+        {Object.entries(CATEGORY_TREE).map(([mainCat, subCats]) => (
+          <div key={mainCat} className="group relative">
+            {/* Main Category Button */}
+            <button 
+              onClick={() => onSelect(mainCat)}
+              className="px-6 py-4 font-display font-bold text-sm text-gray-400 hover:text-neon-cyan transition-colors uppercase tracking-widest flex items-center gap-1 group-hover:bg-white/5"
+            >
+              {mainCat} <ChevronDown size={10} className="group-hover:rotate-180 transition-transform text-neon-purple" />
+            </button>
+
+            {/* Dropdown Menu (Secondary Classification) */}
+            <div className="absolute top-full left-0 w-56 bg-synth-panel border border-neon-cyan/50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform origin-top shadow-[0_0_20px_rgba(0,249,255,0.2)] z-50">
+               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-neon-purple to-neon-cyan"></div>
+               <div className="p-4 grid gap-1">
+                 {subCats.map(sub => (
+                   <button 
+                     key={sub}
+                     onClick={(e) => { e.stopPropagation(); onSelect(mainCat, sub); }}
+                     className="text-left px-4 py-2 text-sm font-display text-gray-300 hover:text-black hover:bg-neon-cyan transition-colors uppercase tracking-wide skew-x-[-6deg] group/item"
+                   >
+                     <span className="skew-x-[6deg] block flex items-center justify-between">
+                       {sub} <span className="opacity-0 group-hover/item:opacity-100 text-[10px]">»</span>
+                     </span>
+                   </button>
+                 ))}
+               </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MobileCategoryBar: React.FC<{ onSelect: (cat: string) => void, activeCat?: string }> = ({ onSelect, activeCat }) => {
+  return (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-black/40 backdrop-blur-xl border-t border-white/10 pb-4 pt-3 w-full shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
+       <div className="flex overflow-x-auto no-scrollbar px-4 pb-2 gap-3 items-center">
+          <div className="flex-shrink-0 text-neon-yellow pr-2 border-r border-white/10">
+             <Sliders size={20} />
+          </div>
+          <button 
+             onClick={() => onSelect('ALL')}
+             className={`flex-shrink-0 px-5 py-2 rounded-full border ${!activeCat || activeCat === 'ALL' ? 'bg-neon-pink border-neon-pink text-white' : 'border-white/20 text-gray-400'} font-display text-xs font-bold uppercase transition-all`}
+          >
+            ALL
+          </button>
+          {Object.keys(CATEGORY_TREE).map(cat => (
+             <button 
+               key={cat}
+               onClick={() => onSelect(cat)}
+               className={`flex-shrink-0 px-5 py-2 rounded-full border ${activeCat === cat ? 'bg-neon-cyan border-neon-cyan text-black' : 'border-white/20 text-gray-400'} font-display text-xs font-bold uppercase transition-all whitespace-nowrap`}
+             >
+               {cat}
+             </button>
+          ))}
+       </div>
+       <div className="h-1 bg-gradient-to-r from-neon-purple via-neon-pink to-neon-yellow w-full opacity-50"></div>
+    </div>
+  );
+};
+
+const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => (
+  <div className="fixed bottom-24 md:bottom-8 right-8 z-[90] animate-fade-in">
+    <div className="bg-black border-2 border-neon-cyan text-neon-cyan px-6 py-4 shadow-[0_0_20px_rgba(0,249,255,0.3)] flex items-center gap-4 skew-x-[-10deg]">
+       <CheckCircle className="skew-x-[10deg]" size={20} />
+       <span className="skew-x-[10deg] font-display font-bold uppercase tracking-wide">{message}</span>
+    </div>
+  </div>
+);
+
+// 首页FAQ组件 - 可展开折叠
+const HomeFAQSection: React.FC = () => {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  
+  const faqs = [
+    {
+      question: "Are shipments discreet?",
+      answer: "Yes. All packages are deployed in plain, vacuum-sealed stealth containers. No branding. No logs. The package will appear as \"Tech Components\" on scans. Your privacy is our protocol."
+    },
+    {
+      question: "Is my data secure?",
+      answer: "We use 256-bit quantum encryption. Your purchase history is wiped from the local node after 30 days. We do not sell data to mega-corps. All transactions are end-to-end encrypted."
+    },
+    {
+      question: "What is the return policy?",
+      answer: "Due to bio-hazard protocols, open products cannot be returned once the seal is broken. Hardware malfunctions are covered by a 1-year warranty. Contact our support node for assistance."
+    },
+    {
+      question: "How fast is shipping?",
+      answer: "Standard relay: 3-5 galactic cycles (business days). Priority warp: 24 hours for Sector 7. All items are dispatched from our orbital warehouse within 2 hours of payment confirmation."
+    },
+    {
+      question: "What payment methods do you accept?",
+      answer: "We accept all major credit cards, PayPal, and cryptocurrency (Bitcoin, Ethereum). All transactions are processed through secure, encrypted channels."
+    }
+  ];
+  
+  return (
+    <div className="space-y-3">
+      {faqs.map((faq, index) => (
+        <div 
+          key={index}
+          className="group border border-white/10 hover:border-neon-cyan/30 bg-black/40 transition-all duration-300 overflow-hidden"
+        >
+          {/* 问题按钮 */}
+          <button
+            onClick={() => setOpenIndex(openIndex === index ? null : index)}
+            className="w-full p-4 md:p-5 flex items-center justify-between text-left group hover:bg-white/5 transition-colors"
+          >
+            <h3 className="font-display text-white text-sm md:text-base font-medium group-hover:text-neon-cyan transition-colors pr-4">
+              {faq.question}
+            </h3>
+            <ChevronDown 
+              size={18} 
+              className={`text-neon-cyan transition-transform duration-300 flex-shrink-0 ${
+                openIndex === index ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          
+          {/* 答案内容 */}
+          <div 
+            className={`overflow-hidden transition-all duration-300 ${
+              openIndex === index ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+            }`}
+          >
+            <div className="px-4 pb-4 md:px-5 md:pb-5 pt-0">
+              <p className="text-gray-400 text-sm leading-relaxed">
+                {faq.answer}
+              </p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// 评论轮播组件
+const TestimonialCarousel: React.FC<{ reviews: typeof REVIEWS_MOCK }> = ({ reviews }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const itemsPerPage = 3;
+  const totalPages = Math.ceil(reviews.length / itemsPerPage);
+
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev === 0 ? totalPages - 1 : prev - 1));
+  };
+
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev === totalPages - 1 ? 0 : prev + 1));
+  };
+
+  const currentReviews = reviews.slice(
+    currentIndex * itemsPerPage,
+    (currentIndex + 1) * itemsPerPage
+  );
+
+  return (
+    <div className="relative">
+      {/* 左右按钮 */}
+      <button
+        onClick={handlePrev}
+        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 md:-translate-x-12 z-10 w-10 h-10 md:w-12 md:h-12 bg-white/10 hover:bg-neon-cyan/20 border border-white/20 hover:border-neon-cyan rounded-full flex items-center justify-center transition-all group"
+      >
+        <ChevronLeft size={20} className="text-white group-hover:text-neon-cyan" />
+      </button>
+
+      <button
+        onClick={handleNext}
+        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 md:translate-x-12 z-10 w-10 h-10 md:w-12 md:h-12 bg-white/10 hover:bg-neon-cyan/20 border border-white/20 hover:border-neon-cyan rounded-full flex items-center justify-center transition-all group"
+      >
+        <ChevronRight size={20} className="text-white group-hover:text-neon-cyan" />
+      </button>
+
+      {/* 卡片容器 */}
+      <div className="overflow-hidden">
+        <div 
+          className="flex transition-transform duration-500 ease-out"
+          style={{ transform: `translateX(-${currentIndex * 100}%)` }}
+        >
+          {Array.from({ length: totalPages }).map((_, pageIndex) => (
+            <div key={pageIndex} className="w-full flex-shrink-0">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {reviews.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage).map((r, i) => (
+                  <div
+                    key={pageIndex * itemsPerPage + i}
+                    className="group relative bg-white/5 border border-white/10 hover:border-neon-cyan/50 transition-all duration-300 p-5 rounded-lg"
+                  >
+                    {/* 顶部装饰线 */}
+                    <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-neon-cyan to-transparent opacity-50 group-hover:opacity-100 transition-opacity"></div>
+
+                    {/* 用户信息 - 紧凑布局 */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="relative flex-shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20 border border-neon-cyan/30 flex items-center justify-center">
+                          <span className="font-display text-sm font-black text-neon-cyan">{r.user[0]}</span>
+                        </div>
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-neon-cyan rounded-full border border-black flex items-center justify-center">
+                          <CheckCircle size={7} className="text-black" />
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-display text-white font-bold text-xs tracking-wide truncate">{r.user}</div>
+                        <div className="text-gray-500 text-[10px] uppercase tracking-wider font-display">{r.date}</div>
+                      </div>
+
+                      {/* 评分 */}
+                      <div className="flex items-center gap-0.5">
+                        {[...Array(5)].map((_, j) => (
+                          <Star
+                            key={j}
+                            size={10}
+                            className={j < r.rating ? 'text-neon-yellow fill-neon-yellow' : 'text-gray-700'}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 评价内容 - 紧凑 */}
+                    <p className="text-gray-300 text-xs leading-relaxed font-body line-clamp-3">
+                      {r.content}
+                    </p>
+
+                    {/* 底部信息 */}
+                    <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[10px] text-gray-600 font-display">
+                        <Shield size={10} className="text-neon-cyan/50" />
+                        <span className="uppercase tracking-wider">Verified</span>
+                      </div>
+                      <button className="hover:text-neon-cyan transition-colors flex items-center gap-1 text-[10px] text-gray-600">
+                        <ThumbsUp size={10} />
+                        <span className="font-display">{Math.floor(Math.random() * 50 + 10)}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 页码指示器 */}
+      <div className="flex justify-center gap-2 mt-6">
+        {Array.from({ length: totalPages }).map((_, index) => (
+          <button
+            key={index}
+            onClick={() => setCurrentIndex(index)}
+            className={`w-2 h-2 rounded-full transition-all ${
+              index === currentIndex
+                ? 'bg-neon-cyan w-6'
+                : 'bg-white/20 hover:bg-white/40'
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AgeGate: React.FC<{ onVerify: () => void }> = ({ onVerify }) => (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-synth-bg/95 backdrop-blur-sm">
+    <div className="relative border-4 border-neon-pink p-1 bg-synth-bg max-w-lg w-full shadow-neon-pink mx-4 skew-x-[-2deg]">
+       <div className="absolute -top-2 -left-2 w-4 h-4 bg-neon-cyan"></div>
+       <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-neon-cyan"></div>
+       
+      <div className="bg-synth-panel p-10 text-center relative overflow-hidden border border-white/10">
+        <div className="absolute top-0 left-0 w-full h-full bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.05)_50%,transparent_75%,transparent_100%)] bg-[length:250%_250%,100%_100%] animate-shimmer"></div>
+        <div className="relative z-10">
+          <Disc className="w-16 h-16 text-neon-cyan mx-auto mb-6 animate-spin-slow" />
+          <h1 className="font-display text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-pink mb-2 tracking-widest drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">NEBULA</h1>
+          <p className="text-gray-300 font-body text-lg mb-8 leading-relaxed border-l-4 border-neon-cyan pl-4 text-left bg-black/30 py-2">
+            WARNING: ADULT CONTENT (18+).<br/>ENTER AT YOUR OWN RISK.
+          </p>
+          <RetroButton onClick={onVerify} className="w-full" icon={<Play size={16} fill="currentColor" />}>
+            ENTER SITE
+          </RetroButton>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const SearchBar: React.FC<{ isOpen: boolean; onClose: () => void; onSearch: (q: string) => void }> = ({ isOpen, onClose, onSearch }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="absolute top-20 left-0 w-full bg-black/95 border-b border-neon-cyan p-6 z-50 animate-fade-in">
+       <div className="max-w-4xl mx-auto flex items-center gap-4">
+          <Search className="text-neon-cyan" />
+          <input 
+            autoFocus
+            type="text" 
+            placeholder="SEARCH_MAINFRAME..." 
+            className="flex-1 bg-transparent border-none text-white font-display text-2xl placeholder-gray-600 focus:outline-none uppercase"
+            onChange={(e) => onSearch(e.target.value)}
+          />
+          <button onClick={onClose}><X className="text-gray-500 hover:text-white" /></button>
+       </div>
+    </div>
+  );
+};
+
+const Navbar: React.FC<{ 
+  cartCount: number; 
+  onOpenCart: () => void; 
+  onNavigate: (view: ViewState) => void;
+  onToggleSearch: () => void;
+  onToggleSettings: () => void;
+}> = ({ cartCount, onOpenCart, onNavigate, onToggleSearch, onToggleSettings }) => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  return (
+    <>
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-synth-bg/90 backdrop-blur border-b border-neon-purple/50 shadow-neon-pink">
+      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        
+        {/* Mobile Menu Button */}
+        <button 
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="md:hidden text-white hover:text-neon-cyan transition-colors mr-2"
+        >
+          <Menu size={24} />
+        </button>
+
+        <button onClick={() => onNavigate('HOME')} className="flex items-center gap-2 group mr-auto md:mr-0">
+          <img src="/logo.svg" alt="NEBULA" className="h-12 w-auto" />
+        </button>
+        
+        {/* Desktop Simple Links (Hidden on Mobile) */}
+        <div className="hidden md:flex items-center gap-1">
+          <button 
+            onClick={() => onNavigate('HOME')}
+            className="px-6 py-2 text-sm font-display font-bold tracking-widest text-gray-400 hover:text-neon-cyan hover:bg-white/5 skew-x-[-10deg] transition-all border-r border-white/5 last:border-none"
+          >
+            <span className="skew-x-[10deg] inline-block">TERMINAL</span>
+          </button>
+          <button 
+            onClick={() => onNavigate('SHOP')}
+            className="px-6 py-2 text-sm font-display font-bold tracking-widest text-gray-400 hover:text-neon-cyan hover:bg-white/5 skew-x-[-10deg] transition-all border-r border-white/5 last:border-none"
+          >
+            <span className="skew-x-[10deg] inline-block">SHOP</span>
+          </button>
+          <button 
+            onClick={() => onNavigate('LOOKBOOK')}
+            className="px-6 py-2 text-sm font-display font-bold tracking-widest text-gray-400 hover:text-neon-cyan hover:bg-white/5 skew-x-[-10deg] transition-all border-r border-white/5 last:border-none"
+          >
+            <span className="skew-x-[10deg] inline-block">LOOKBOOK</span>
+          </button>
+          <button 
+            onClick={() => onNavigate('BLOG')}
+            className="px-6 py-2 text-sm font-display font-bold tracking-widest text-gray-400 hover:text-neon-cyan hover:bg-white/5 skew-x-[-10deg] transition-all border-r border-white/5 last:border-none"
+          >
+            <span className="skew-x-[10deg] inline-block">BLOG</span>
+          </button>
+          <button 
+            onClick={() => onNavigate('CONTACT')}
+            className="px-6 py-2 text-sm font-display font-bold tracking-widest text-gray-400 hover:text-neon-cyan hover:bg-white/5 skew-x-[-10deg] transition-all border-r border-white/5 last:border-none"
+          >
+            <span className="skew-x-[10deg] inline-block">CONTACT</span>
+          </button>
+        </div>
+  
+        <div className="flex items-center gap-6">
+         <button onClick={onToggleSearch} className="text-white hover:text-neon-cyan transition-colors">
+            <Search size={20} />
+         </button>
+         
+         <button onClick={onToggleSettings} className="text-white hover:text-neon-cyan transition-colors flex items-center gap-1 font-display text-xs font-bold">
+            <Globe size={20} /> <span className="hidden sm:inline">EN/USD</span>
+         </button>
+  
+         <button onClick={onOpenCart} className="flex items-center gap-2 group hover:text-neon-pink transition-colors text-white">
+            <div className="relative">
+               <ShoppingBag size={24} />
+               {cartCount > 0 && (
+                  <span className="absolute -top-2 -right-2 w-5 h-5 bg-neon-yellow text-black font-display font-bold text-xs flex items-center justify-center shadow-lg clip-path-polygon">
+                     {cartCount}
+                  </span>
+               )}
+            </div>
+         </button>
+        </div>
+      </div>
+    </nav>
+
+    {/* Mobile Full Screen Menu */}
+    {isMobileMenuOpen && (
+       <div className="fixed inset-0 z-[100] bg-synth-bg/95 backdrop-blur-xl flex flex-col justify-center items-center gap-6 animate-fade-in p-8 overflow-y-auto">
+           <button onClick={() => setIsMobileMenuOpen(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white">
+             <X size={32} />
+           </button>
+           
+           <h2 className="font-display text-4xl text-neon-pink font-black italic mb-4 mt-8">SYSTEM_ACCESS</h2>
+
+           <button onClick={() => { onNavigate('HOME'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">TERMINAL</button>
+           <button onClick={() => { onNavigate('SHOP'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">SHOP</button>
+           <button onClick={() => { onNavigate('LOOKBOOK'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">LOOKBOOK</button>
+           <button onClick={() => { onNavigate('BLOG'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">BLOG</button>
+           <button onClick={() => { onNavigate('CONTACT'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">CONTACT UPLINK</button>
+           <button onClick={() => { onNavigate('ABOUT'); setIsMobileMenuOpen(false); }} className="text-xl font-display font-bold text-white hover:text-neon-cyan uppercase tracking-widest">SYSTEM CORE</button>
+           
+           <div className="w-20 h-1 bg-white/10 my-4"></div>
+           
+           <div className="flex flex-col gap-3 text-center">
+             <button onClick={() => { onNavigate('TRACKING'); setIsMobileMenuOpen(false); }} className="text-sm font-display text-gray-400 hover:text-white uppercase flex items-center gap-2 justify-center"><Radar size={14}/> Track Signal</button>
+             <button onClick={() => { onNavigate('FAQ'); setIsMobileMenuOpen(false); }} className="text-sm font-display text-gray-400 hover:text-white uppercase">FAQ Database</button>
+             <button onClick={() => { onNavigate('SHIPPING'); setIsMobileMenuOpen(false); }} className="text-sm font-display text-gray-400 hover:text-white uppercase">Shipping Protocol</button>
+             <button onClick={() => { onNavigate('RETURNS'); setIsMobileMenuOpen(false); }} className="text-sm font-display text-gray-400 hover:text-white uppercase">Returns</button>
+           </div>
+
+           <div className="mt-8 flex gap-6">
+              <Facebook className="text-gray-500" />
+              <Instagram className="text-gray-500" />
+              <Twitter className="text-gray-500" />
+           </div>
+       </div>
+    )}
+    </>
+  );
+};
+
+const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-synth-panel border border-neon-cyan p-8 max-w-sm w-full relative skew-x-[-2deg]" onClick={e => e.stopPropagation()}>
+         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={20} /></button>
+         <h2 className="font-display text-2xl text-white mb-6 skew-x-[2deg]">SYSTEM_SETTINGS</h2>
+         
+         <div className="space-y-6 skew-x-[2deg]">
+            <div>
+              <label className="block text-neon-purple text-xs font-bold mb-2 uppercase">Interface Language</label>
+              <div className="grid grid-cols-2 gap-2">
+                 <button className="bg-neon-cyan text-black px-4 py-2 font-display text-sm font-bold">ENGLISH</button>
+                 <button className="bg-black border border-gray-600 text-gray-400 px-4 py-2 font-display text-sm hover:border-white">日本語</button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-neon-purple text-xs font-bold mb-2 uppercase">Currency</label>
+              <div className="grid grid-cols-2 gap-2">
+                 <button className="bg-neon-cyan text-black px-4 py-2 font-display text-sm font-bold">USD ($)</button>
+                 <button className="bg-black border border-gray-600 text-gray-400 px-4 py-2 font-display text-sm hover:border-white">EUR (€)</button>
+              </div>
+            </div>
+            <RetroButton onClick={onClose} className="w-full mt-4">SAVE CONFIG</RetroButton>
+         </div>
+      </div>
+    </div>
+  );
+};
+
+const ProductCard: React.FC<{ product: Product; onClick: () => void }> = ({ product, onClick }) => (
+  <div onClick={onClick} className="group relative bg-synth-panel border border-white/10 hover:border-neon-cyan transition-all duration-300 cursor-pointer overflow-hidden flex flex-col h-full">
+    <div className="aspect-square relative overflow-hidden bg-black">
+      <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500 mix-blend-normal group-hover:scale-110" />
+      <div className="absolute inset-0 bg-gradient-to-t from-synth-panel via-transparent to-transparent opacity-60"></div>
+      {Math.random() > 0.5 && (
+        <div className="absolute top-2 right-2 bg-neon-yellow text-black text-[10px] font-display font-bold px-2 py-1 transform skew-x-[-10deg]">
+          NEW DROP
+        </div>
+      )}
+      {/* Video Indicator */}
+      {product.mainVideo && (
+         <div className="absolute bottom-2 right-2 bg-black/60 text-white p-1 rounded-full backdrop-blur-sm">
+             <Play size={12} fill="currentColor"/>
+         </div>
+      )}
+    </div>
+    <div className="p-3 md:p-5 relative flex-1 flex flex-col justify-between">
+      <div>
+        <div className="text-neon-purple text-[10px] md:text-xs font-display mb-1">{product.category}</div>
+        <h3 className="font-display font-bold text-sm md:text-lg text-white uppercase italic tracking-wider leading-none group-hover:text-neon-cyan transition-colors line-clamp-2">{product.name}</h3>
+      </div>
+      <div className="flex justify-between items-end mt-4">
+         <span className="font-display text-lg md:text-xl text-neon-yellow text-glow">${product.price}</span>
+         <div className="w-6 h-6 md:w-8 md:h-8 bg-white/10 text-white flex items-center justify-center transform skew-x-[-10deg] group-hover:bg-neon-cyan group-hover:text-black transition-colors">
+            <ArrowRight size={14} className="skew-x-[10deg] md:w-4 md:h-4" />
+         </div>
+      </div>
+    </div>
+  </div>
+);
+
+const CartDrawer: React.FC<{ 
+  isOpen: boolean; 
+  onClose: () => void; 
+  items: CartItem[];
+  onUpdateQty: (id: string, delta: number) => void;
+  onCheckout: () => void;
+  isProcessing: boolean;
+}> = ({ isOpen, onClose, items, onUpdateQty, onCheckout, isProcessing }) => {
+  const [exitingItems, setExitingItems] = useState<string[]>([]);
+  const total = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
+  const handleUpdateQty = (id: string, delta: number) => {
+    const item = items.find(i => i.id === id);
+    if (item && item.quantity + delta <= 0) {
+      setExitingItems(prev => [...prev, id]);
+      setTimeout(() => {
+        onUpdateQty(id, delta);
+        setExitingItems(prev => prev.filter(i => i !== id));
+      }, 300);
+    } else {
+      onUpdateQty(id, delta);
+    }
+  };
+
+  return (
+    <>
+      {isOpen && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] animate-fade-in" onClick={onClose} />}
+      <div className={`fixed inset-y-0 right-0 w-full sm:w-[450px] bg-[#1a0b2e] border-l-2 border-neon-pink z-[80] transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="h-full flex flex-col">
+          <div className="p-6 border-b-2 border-neon-pink/30 flex justify-between items-center bg-black/20">
+            <h2 className="font-display text-xl uppercase tracking-widest text-neon-pink italic font-black text-glow-pink">INVENTORY</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={24} /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {items.length === 0 ? (
+               <div className="h-full flex flex-col items-center justify-center text-neon-purple/50 font-display animate-fade-in">
+                 <Monitor className="mb-4" size={48} />
+                 <p className="tracking-widest uppercase">System Empty</p>
+               </div>
+            ) : (
+              items.map(item => {
+                const hasDiscount = (item as any).volumeDiscount > 0;
+                const originalPrice = item.price / (1 - ((item as any).volumeDiscount || 0) / 100);
+                
+                return (
+                <div 
+                  key={item.id} 
+                  className={`flex gap-4 p-3 border border-white/10 bg-white/5 hover:border-neon-cyan transition-all duration-300 ease-in-out ${exitingItems.includes(item.id) ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0 animate-fade-in'}`}
+                >
+                  <div className="w-16 h-16 bg-black aspect-square"><img src={item.images[0]} className="w-full h-full object-cover" /></div>
+                  <div className="flex-1">
+                     <div className="flex justify-between items-start">
+                         <h3 className="font-display text-sm text-white uppercase tracking-wide">{item.name}</h3>
+                         <button onClick={() => handleUpdateQty(item.id, -item.quantity)} className="text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+                     </div>
+                     <div className="flex items-center gap-2 mt-1">
+                       <div className="text-neon-yellow font-display text-sm">${item.price.toFixed(2)}</div>
+                       {hasDiscount && (
+                         <>
+                           <div className="text-gray-500 line-through text-xs">${originalPrice.toFixed(2)}</div>
+                           <div className="text-neon-cyan text-xs font-bold">-{(item as any).volumeDiscount}%</div>
+                         </>
+                       )}
+                     </div>
+                     <div className="flex items-center gap-3 mt-2">
+                       <button onClick={() => handleUpdateQty(item.id, -1)} className="text-neon-cyan hover:text-white font-bold text-lg px-2">-</button>
+                       <span className="font-display text-white">{item.quantity}</span>
+                       <button onClick={() => handleUpdateQty(item.id, 1)} className="text-neon-cyan hover:text-white font-bold text-lg px-2">+</button>
+                     </div>
+                  </div>
+                </div>
+              )}
+              )
+            )}
+          </div>
+          {items.length > 0 && (
+            <div className="p-6 border-t-2 border-neon-pink/30 bg-black/20">
+               <div className="flex justify-between font-display text-sm text-gray-300 mb-6 uppercase tracking-wider">
+                 <span>Total Amount</span>
+                 <span className="text-neon-yellow text-xl text-glow">${total.toFixed(2)}</span>
+               </div>
+               <RetroButton className="w-full" variant="action" onClick={onCheckout} disabled={isProcessing} icon={isProcessing ? <Loader2 className="animate-spin" size={16}/> : <ArrowRight size={16}/>}>
+                 PROCEED TO CHECKOUT
+               </RetroButton>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+// --- NEW PAGE COMPONENTS ---
+
+const LookbookView: React.FC = () => (
+  <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-7xl mx-auto min-h-screen">
+      <h1 className="font-display text-5xl text-white font-black italic uppercase mb-12 text-center text-glow-pink">VISUAL_DATA_LOGS</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[
+            'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=800',
+            'https://images.unsplash.com/photo-1515630278258-407f66498911?auto=format&fit=crop&q=80&w=800',
+            'https://images.unsplash.com/photo-1605721911519-3dfeb3be25e7?auto=format&fit=crop&q=80&w=800',
+            'https://images.unsplash.com/photo-1574169208507-84376144848b?auto=format&fit=crop&q=80&w=800',
+            'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&q=80&w=800',
+            'https://images.unsplash.com/photo-1535295972055-1c762f4483e5?auto=format&fit=crop&q=80&w=800'
+          ].map((src, i) => (
+              <div key={i} className={`group relative overflow-hidden border border-white/10 ${i % 3 === 0 ? 'md:col-span-2' : ''}`}>
+                  <div className="absolute inset-0 bg-neon-purple/20 mix-blend-overlay opacity-0 group-hover:opacity-100 transition-opacity z-10"></div>
+                  <img src={src} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 hover:scale-105" />
+                  <div className="absolute bottom-4 left-4 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="text-neon-cyan font-display text-sm font-bold">LOG_00{i+1}</div>
+                  </div>
+              </div>
+          ))}
+      </div>
+  </div>
+);
+
+const BlogView: React.FC<{ onRead: (id: number) => void }> = ({ onRead }) => (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-4xl mx-auto min-h-screen">
+        <h1 className="font-display text-5xl text-white font-black italic uppercase mb-12 text-center text-glow-pink">TRANSMISSIONS</h1>
+        <div className="space-y-12">
+            {[
+                { title: "THE FUTURE OF HAPTICS", date: "2084.04.12", desc: "How bio-feedback loops are revolutionizing intimacy.", img: "https://images.unsplash.com/photo-1535295972055-1c762f4483e5?auto=format&fit=crop&q=80&w=800" },
+                { title: "SYNTHETIC SENSATIONS", date: "2084.03.28", desc: "Exploring the boundary between neural inputs and physical touch.", img: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=800" },
+                { title: "PRIVACY IN THE MESH", date: "2084.03.15", desc: "Why end-to-end encryption matters more than ever in connected devices.", img: "https://images.unsplash.com/photo-1515630278258-407f66498911?auto=format&fit=crop&q=80&w=800" }
+            ].map((post, i) => (
+                <div key={i} className="flex flex-col md:flex-row gap-8 border-b border-white/10 pb-12 group cursor-pointer">
+                    <div className="w-full md:w-1/3 aspect-video overflow-hidden border border-white/10">
+                        <img src={post.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 grayscale group-hover:grayscale-0" />
+                    </div>
+                    <div className="flex-1">
+                        <div className="text-neon-purple font-display text-xs mb-2">{post.date} // DECRYPTED</div>
+                        <h2 className="text-2xl font-display text-white font-bold mb-4 group-hover:text-neon-cyan transition-colors">{post.title}</h2>
+                        <p className="text-gray-400 mb-6">{post.desc}</p>
+                        <span className="text-neon-yellow text-xs font-display font-bold uppercase tracking-widest group-hover:underline">Read Protocol &gt;&gt;</span>
+                    </div>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
+const ContactView: React.FC = () => (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-2xl mx-auto min-h-screen">
+        <h1 className="font-display text-4xl text-white font-black italic uppercase mb-8 text-center text-glow-pink">SECURE UPLINK</h1>
+        <div className="bg-synth-panel border border-white/10 p-8 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-neon-purple to-neon-cyan"></div>
+            <form className="space-y-6">
+                <div>
+                    <label className="block text-neon-cyan text-xs font-bold mb-2 uppercase">Node Identity (Name)</label>
+                    <input type="text" className="w-full bg-black border border-white/20 p-3 text-white focus:border-neon-pink outline-none font-display" />
+                </div>
+                <div>
+                    <label className="block text-neon-cyan text-xs font-bold mb-2 uppercase">Frequency (Email)</label>
+                    <input type="email" className="w-full bg-black border border-white/20 p-3 text-white focus:border-neon-pink outline-none font-display" />
+                </div>
+                <div>
+                    <label className="block text-neon-cyan text-xs font-bold mb-2 uppercase">Data Packet (Message)</label>
+                    <textarea rows={6} className="w-full bg-black border border-white/20 p-3 text-white focus:border-neon-pink outline-none font-body"></textarea>
+                </div>
+                <RetroButton className="w-full" icon={<Send size={16}/>}>TRANSMIT DATA</RetroButton>
+            </form>
+            <div className="mt-8 pt-8 border-t border-white/10 text-center space-y-2">
+                <div className="text-gray-400 text-sm">Or establish direct link via:</div>
+                <div className="text-neon-yellow font-display text-lg">UPLINK@NEBULA.CORP</div>
+            </div>
+        </div>
+    </div>
+);
+
+const FaqView: React.FC = () => (
+  <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-4xl mx-auto min-h-screen">
+    <h1 className="font-display text-4xl text-white font-black italic uppercase mb-12 text-center text-glow-pink">FAQ DATABASE</h1>
+    <div className="space-y-8">
+      <div className="bg-white/5 border border-white/10 p-6">
+        <h3 className="text-neon-cyan font-bold text-xl mb-2 flex items-center gap-2"><Lock size={20}/> Are shipments discreet?</h3>
+        <p className="text-gray-300 text-lg">Yes. All packages are deployed in plain, vacuum-sealed stealth containers. No branding. No logs. The package will appear as "Tech Components" on scans.</p>
+      </div>
+      <div className="bg-white/5 border border-white/10 p-6">
+        <h3 className="text-neon-cyan font-bold text-xl mb-2 flex items-center gap-2"><Shield size={20}/> Is my data secure?</h3>
+        <p className="text-gray-300 text-lg">We use 256-bit quantum encryption. Your purchase history is wiped from the local node after 30 days. We do not sell data to mega-corps.</p>
+      </div>
+      <div className="bg-white/5 border border-white/10 p-6">
+        <h3 className="text-neon-cyan font-bold text-xl mb-2 flex items-center gap-2"><RefreshCw size={20}/> What is the return policy?</h3>
+        <p className="text-gray-300 text-lg">Due to bio-hazard protocols, open software (products) cannot be returned once the seal is broken. Hardware malfunctions are covered by a 1-year warranty.</p>
+      </div>
+    </div>
+  </div>
+);
+
+const ShippingView: React.FC = () => (
+  <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-4xl mx-auto min-h-screen">
+    <h1 className="font-display text-4xl text-white font-black italic uppercase mb-12 text-center text-glow-pink">SHIPPING PROTOCOL</h1>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-black border border-neon-purple p-8 text-center">
+            <Truck size={48} className="mx-auto text-neon-purple mb-4" />
+            <h3 className="text-white font-display text-xl font-bold mb-2">STANDARD RELAY</h3>
+            <p className="text-gray-400">3-5 Galactic Cycles</p>
+            <p className="text-neon-yellow font-bold mt-2">FREE over $500</p>
+        </div>
+        <div className="bg-black border border-neon-cyan p-8 text-center">
+            <Zap size={48} className="mx-auto text-neon-cyan mb-4" />
+            <h3 className="text-white font-display text-xl font-bold mb-2">PRIORITY WARP</h3>
+            <p className="text-gray-400">24 Hours (Sector 7 Only)</p>
+            <p className="text-neon-yellow font-bold mt-2">+ $25.00</p>
+        </div>
+    </div>
+    <div className="mt-12 text-gray-300 space-y-4 text-lg">
+        <p>All items are dispatched from our orbital warehouse within 2 hours of payment confirmation.</p>
+        <p>Drone delivery is available for verified addresses in sectors with clearance level 2 or higher.</p>
+    </div>
+  </div>
+);
+
+const ReturnsView: React.FC = () => (
+  <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-3xl mx-auto min-h-screen">
+    <div className="border-l-4 border-neon-pink pl-6 mb-12">
+        <h1 className="font-display text-4xl text-white font-black italic uppercase mb-2 text-glow-pink">RETURN POLICY</h1>
+        <div className="text-neon-pink font-mono text-xs">DOC_REF: RTN-9982</div>
+    </div>
+    
+    <div className="space-y-8 text-gray-300 text-lg">
+        <p>
+            <strong className="text-white">BIO-HAZARD WARNING:</strong> Due to the intimate nature of our neural interfaces and haptic devices, we strictly adhere to inter-galactic health codes.
+        </p>
+        
+        <div className="bg-red-900/20 border border-red-500/50 p-6">
+            <h3 className="text-red-500 font-display font-bold uppercase mb-2">NON-RETURNABLE</h3>
+            <p className="text-sm">Any item that has been opened, unsealed, or used cannot be returned for a refund. This is for the safety of our entire network.</p>
+        </div>
+
+        <div className="bg-neon-cyan/10 border border-neon-cyan/50 p-6">
+            <h3 className="text-neon-cyan font-display font-bold uppercase mb-2">DEFECTIVE HARDWARE</h3>
+            <p className="text-sm">If your device malfunctions due to a manufacturing error within 1 year (Earth Time), we will issue a replacement unit immediately. Signal us via the Support Node.</p>
+        </div>
+    </div>
+  </div>
+);
+
+const TrackingView: React.FC = () => (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-2xl mx-auto min-h-screen text-center">
+        <Radar size={64} className="mx-auto text-neon-pink mb-8 animate-spin-slow" />
+        <h1 className="font-display text-4xl text-white font-black italic uppercase mb-8">SIGNAL TRACKER</h1>
+        <div className="bg-synth-panel border border-white/10 p-8">
+            <p className="text-gray-400 mb-6">Locate your package in the mesh network.</p>
+            <div className="flex flex-col sm:flex-row gap-4">
+                <input type="text" placeholder="ENTER ORDER_ID (e.g. NEB-X89)" className="flex-1 bg-black border border-white/20 p-4 text-white focus:border-neon-cyan outline-none font-display uppercase" />
+                <RetroButton>SCAN</RetroButton>
+            </div>
+        </div>
+    </div>
+);
+
+const InfoPageView: React.FC<{ title: string; content: React.ReactNode }> = ({ title, content }) => (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 max-w-3xl mx-auto min-h-screen">
+        <div className="border-l-4 border-neon-purple pl-6 mb-12">
+            <h1 className="font-display text-4xl text-white font-black italic uppercase mb-2 text-glow-pink">{title}</h1>
+            <div className="text-neon-cyan font-mono text-xs">SYSTEM_DOC_V.2.0.84</div>
+        </div>
+        <div className="text-gray-300 font-body text-lg leading-relaxed">
+            {content}
+        </div>
+    </div>
+);
+
+// --- VIEWS ---
+
+const CheckoutView: React.FC<{ cart: CartItem[]; onBack: () => void; onProcessPayment: (method: string) => void; isProcessing: boolean }> = ({ cart, onBack, onProcessPayment, isProcessing }) => {
+    const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const shipping = subtotal > 500 ? 0 : 25;
+    const total = subtotal + shipping;
+    
+    const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'PAYPAL'>('CARD');
+    const [paypalLoaded, setPaypalLoaded] = useState(false);
+    const paypalButtonRef = useRef<HTMLDivElement>(null);
+    const applePayButtonRef = useRef<HTMLDivElement>(null);
+    const googlePayButtonRef = useRef<HTMLDivElement>(null);
+
+    // 加载PayPal SDK并初始化所有支付按钮
+    useEffect(() => {
+        let isComponentMounted = true;
+        let paypalButtonInstance: any = null;
+        let applePayButtonInstance: any = null;
+        let googlePayButtonInstance: any = null;
+
+        const loadPayPalSDK = async () => {
+            try {
+                if ((window as any).paypal && (window as any).paypal.Buttons) {
+                    if (isComponentMounted) {
+                        setPaypalLoaded(true);
+                        initPayPalButtons();
+                    }
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = 'https://www.paypal.com/sdk/js?client-id=AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA&currency=USD&intent=capture&disable-funding=credit,card,paylater';
+                script.async = true;
+                
+                script.onload = () => {
+                    if (isComponentMounted) {
+                        console.log('✅ [PayPal SDK]: Loaded');
+                        setPaypalLoaded(true);
+                        initPayPalButtons();
+                    }
+                };
+                
+                script.onerror = () => console.error('❌ [PayPal SDK]: Failed to load');
+                document.body.appendChild(script);
+            } catch (error) {
+                console.error('❌ [PayPal SDK]: Error', error);
+            }
+        };
+
+        const initPayPalButtons = () => {
+            if (!(window as any).paypal || !isComponentMounted) return;
+
+            // 1. PayPal按钮
+            if (paypalButtonRef.current && !paypalButtonRef.current.hasChildNodes()) {
+                try {
+                    paypalButtonInstance = (window as any).paypal.Buttons({
+                        fundingSource: (window as any).paypal.FUNDING.PAYPAL,
+                        style: { height: 48 },
+                        createOrder: async () => {
+                            const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cart, currency: 'USD' })
+                            });
+                            const { orderID } = await response.json();
+                            return orderID;
+                        },
+                        onApprove: async (data: any) => {
+                            const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ orderID: data.orderID })
+                            });
+                            const result = await response.json();
+                            if (result.success) {
+                                window.location.href = `#/checkout-success?method=paypal&orderID=${data.orderID}`;
+                            }
+                        }
+                    });
+                    paypalButtonInstance.render(paypalButtonRef.current);
+                    console.log('✅ [PayPal]: Rendered');
+                } catch (e) { console.error('❌ [PayPal Button]:', e); }
+            }
+
+            // 2. Apple Pay按钮（SDK会自动检查设备支持）
+            if (applePayButtonRef.current && !applePayButtonRef.current.hasChildNodes()) {
+                try {
+                    applePayButtonInstance = (window as any).paypal.Buttons({
+                        fundingSource: (window as any).paypal.FUNDING.APPLEPAY,
+                        style: { height: 48 },
+                        createOrder: async () => {
+                            const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cart, currency: 'USD' })
+                            });
+                            const { orderID } = await response.json();
+                            return orderID;
+                        },
+                        onApprove: async (data: any) => {
+                            window.location.href = `#/checkout-success?method=applepay&orderID=${data.orderID}`;
+                        }
+                    });
+                    if (applePayButtonInstance.isEligible()) {
+                        applePayButtonInstance.render(applePayButtonRef.current);
+                        console.log('✅ [Apple Pay]: Rendered');
+                    }
+                } catch (e) { console.log('ℹ️ [Apple Pay]: Not available'); }
+            }
+
+            // 3. Google Pay按钮（SDK会自动检查设备支持）
+            if (googlePayButtonRef.current && !googlePayButtonRef.current.hasChildNodes()) {
+                try {
+                    googlePayButtonInstance = (window as any).paypal.Buttons({
+                        fundingSource: (window as any).paypal.FUNDING.GOOGLEPAY,
+                        style: { height: 48 },
+                        createOrder: async () => {
+                            const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cart, currency: 'USD' })
+                            });
+                            const { orderID } = await response.json();
+                            return orderID;
+                        },
+                        onApprove: async (data: any) => {
+                            window.location.href = `#/checkout-success?method=googlepay&orderID=${data.orderID}`;
+                        }
+                    });
+                    if (googlePayButtonInstance.isEligible()) {
+                        googlePayButtonInstance.render(googlePayButtonRef.current);
+                        console.log('✅ [Google Pay]: Rendered');
+                    }
+                } catch (e) { console.log('ℹ️ [Google Pay]: Not available'); }
+            }
+        };
+
+        loadPayPalSDK();
+
+        return () => {
+            isComponentMounted = false;
+            [paypalButtonInstance, applePayButtonInstance, googlePayButtonInstance].forEach(instance => {
+                if (instance && instance.close) {
+                    try { instance.close(); } catch (e) {}
+                }
+            });
+        };
+    }, []);
+
+    return (
+        <div className="min-h-screen bg-black pt-20">
+            {/* 顶部导航 */}
+            <div className="bg-black border-b border-neon-cyan/20">
+                <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
+                    <button 
+                        onClick={onBack}
+                        className="flex items-center gap-2 text-gray-400 hover:text-neon-cyan text-sm md:text-base transition-all group"
+                    >
+                        <Rewind size={18} className="group-hover:animate-pulse" /> 
+                        <span className="relative">
+                            Back to shop
+                            <span className="absolute bottom-0 left-0 w-0 h-[1px] bg-neon-cyan group-hover:w-full transition-all duration-300"></span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-6 md:py-10 lg:py-12">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10 lg:gap-16">
+                {/* Left: Forms */}
+                <div className="space-y-6 md:space-y-8">
+                    {/* Express Checkout */}
+                    <div>
+                        <h2 className="text-lg md:text-xl lg:text-2xl font-bold text-white mb-4 md:mb-6">
+                            <span className="relative inline-block">
+                                Express checkout
+                                <span className="absolute -bottom-1 left-0 w-full h-[2px] bg-gradient-to-r from-neon-cyan via-neon-pink to-transparent"></span>
+                            </span>
+                        </h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+                            {/* PayPal 官方按钮 */}
+                            <div ref={paypalButtonRef} className="min-h-[48px]"></div>
+                            {/* Apple Pay 官方按钮 */}
+                            <div ref={applePayButtonRef} className="min-h-[48px]"></div>
+                            {/* Google Pay 官方按钮 */}
+                            <div ref={googlePayButtonRef} className="min-h-[48px]"></div>
+                        </div>
+                        
+                        {/* Divider */}
+                        <div className="flex items-center gap-4 my-6 md:my-8">
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-neon-cyan/50 to-transparent"></div>
+                            <span className="text-xs md:text-sm text-neon-cyan uppercase tracking-wider font-display">Or pay with card</span>
+                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-neon-cyan/50 to-transparent"></div>
+                        </div>
+                    </div>
+
+                    {/* Contact */}
+                    <div>
+                        <h2 className="text-lg md:text-xl lg:text-2xl font-bold text-white mb-4 md:mb-6">
+                            <span className="relative inline-block">
+                                Contact
+                                <span className="absolute -bottom-1 left-0 w-full h-[2px] bg-gradient-to-r from-neon-cyan via-neon-pink to-transparent"></span>
+                            </span>
+                        </h2>
+                        <input 
+                            type="email" 
+                            placeholder="Email" 
+                            className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                        />
+                    </div>
+
+                    {/* Delivery */}
+                    <div>
+                        <h2 className="text-lg md:text-xl lg:text-2xl font-bold text-white mb-4 md:mb-6">
+                            <span className="relative inline-block">
+                                Delivery
+                                <span className="absolute -bottom-1 left-0 w-full h-[2px] bg-gradient-to-r from-neon-cyan via-neon-pink to-transparent"></span>
+                            </span>
+                        </h2>
+                        <div className="space-y-3 md:space-y-4">
+                            <select className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base">
+                                <option className="bg-black">United States</option>
+                                <option className="bg-black">Canada</option>
+                                <option className="bg-black">United Kingdom</option>
+                            </select>
+                            
+                            <div className="grid grid-cols-2 gap-3 md:gap-4">
+                                <input type="text" placeholder="First name" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                                <input type="text" placeholder="Last name" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            </div>
+                            
+                            <input type="text" placeholder="Address" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            
+                            <input type="text" placeholder="Apartment, suite, etc. (optional)" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            
+                            <div className="grid grid-cols-3 gap-3 md:gap-4">
+                                <input type="text" placeholder="City" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                                <select className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base">
+                                    <option value="" className="bg-black">State</option>
+                                </select>
+                                <input type="text" placeholder="ZIP code" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            </div>
+                            
+                            <input type="tel" placeholder="Phone" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                        </div>
+                    </div>
+
+                    {/* Payment */}
+                    <div>
+                        <h2 className="text-lg md:text-xl lg:text-2xl font-bold text-white mb-4 md:mb-6">
+                            <span className="relative inline-block">
+                                Payment
+                                <span className="absolute -bottom-1 left-0 w-full h-[2px] bg-gradient-to-r from-neon-cyan via-neon-pink to-transparent"></span>
+                            </span>
+                        </h2>
+                        <p className="text-xs md:text-sm text-gray-400 mb-3 md:mb-4 flex items-center gap-2">
+                            <Lock size={14} className="text-neon-cyan" />
+                            All transactions are secure and encrypted.
+                        </p>
+                        
+                        <div className="space-y-2 md:space-y-3">
+                            {/* Credit Card */}
+                            <div 
+                                onClick={() => setPaymentMethod('CARD')}
+                                className={`border rounded-t-lg cursor-pointer transition-all ${
+                                    paymentMethod === 'CARD' 
+                                    ? 'border-white/40 bg-white/10' 
+                                    : 'border-white/20 bg-white/5 hover:border-white/30'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between p-3 md:p-4">
+                                    <div className="flex items-center gap-2 md:gap-3">
+                                        <div className={`w-4 h-4 md:w-5 md:h-5 rounded-full border-2 flex items-center justify-center ${
+                                            paymentMethod === 'CARD' ? 'border-white' : 'border-gray-500'
+                                        }`}>
+                                            {paymentMethod === 'CARD' && (
+                                                <div className="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full bg-white"></div>
+                                            )}
+                                        </div>
+                                        <span className="text-sm md:text-base font-medium text-white">Credit card</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <CreditCard size={18} className="text-gray-400 md:w-5 md:h-5" />
+                                    </div>
+                                </div>
+                                
+                                {paymentMethod === 'CARD' && (
+                                    <div className="px-3 md:px-4 pb-3 md:pb-4 space-y-2 md:space-y-3 border-t border-white/10 pt-3 md:pt-4">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Card number" 
+                                            className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                                        />
+                                        <div className="grid grid-cols-2 gap-2 md:gap-3">
+                                            <input 
+                                                type="text" 
+                                                placeholder="MM/YY" 
+                                                className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                                            />
+                                            <input 
+                                                type="text" 
+                                                placeholder="CVV" 
+                                                className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                                            />
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Name on card" 
+                                            className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* PayPal */}
+                            <div 
+                                onClick={() => setPaymentMethod('PAYPAL')}
+                                className={`border rounded-b-lg cursor-pointer transition-all ${
+                                    paymentMethod === 'PAYPAL' 
+                                    ? 'border-white/40 bg-white/10' 
+                                    : 'border-white/20 bg-white/5 hover:border-white/30'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between p-3 md:p-4">
+                                    <div className="flex items-center gap-2 md:gap-3">
+                                        <div className={`w-4 h-4 md:w-5 md:h-5 rounded-full border-2 flex items-center justify-center ${
+                                            paymentMethod === 'PAYPAL' ? 'border-white' : 'border-gray-500'
+                                        }`}>
+                                            {paymentMethod === 'PAYPAL' && (
+                                                <div className="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full bg-white"></div>
+                                            )}
+                                        </div>
+                                        <span className="text-sm md:text-base font-medium text-white">PayPal</span>
+                                    </div>
+                                    <DollarSign size={18} className="text-gray-400 md:w-5 md:h-5" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Pay Now Button */}
+                    <button
+                        onClick={() => onProcessPayment(paymentMethod)}
+                        disabled={isProcessing}
+                        className="relative w-full bg-gradient-to-r from-neon-cyan to-neon-pink hover:shadow-[0_0_20px_rgba(0,255,255,0.5)] disabled:bg-gray-600 disabled:from-gray-600 disabled:to-gray-600 text-black font-bold py-3 md:py-4 px-6 rounded-lg transition-all text-sm md:text-base lg:text-lg flex items-center justify-center gap-2 md:gap-3 group overflow-hidden"
+                    >
+                        <span className="absolute inset-0 bg-gradient-to-r from-neon-pink to-neon-cyan opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+                        <span className="relative z-10">
+                            {isProcessing ? (
+                                <>
+                                    <Loader2 className="animate-spin inline" size={20} />
+                                    {' '}Processing...
+                                </>
+                            ) : (
+                                <>Pay now</>  
+                            )}
+                        </span>
+                    </button>
+                </div>
+
+                {/* Right: Order Summary */}
+                <div className="lg:sticky lg:top-6 h-fit">
+                    <div className="bg-white/5 border border-neon-cyan/30 rounded-lg p-4 md:p-6 lg:p-8 shadow-[0_0_15px_rgba(0,255,255,0.1)] hover:shadow-[0_0_25px_rgba(0,255,255,0.2)] transition-all">
+                        <h3 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">
+                            <span className="relative inline-block">
+                                Order summary
+                                <span className="absolute -bottom-1 left-0 w-full h-[2px] bg-gradient-to-r from-neon-cyan via-neon-pink to-transparent"></span>
+                            </span>
+                        </h3>
+                        
+                        {/* Products */}
+                        <div className="space-y-3 md:space-y-4 mb-4 md:mb-6 pb-4 md:pb-6 border-b border-white/10">
+                            {cart.map(item => (
+                                <div key={item.id} className="flex gap-3 md:gap-4">
+                                    <div className="relative flex-shrink-0">
+                                        <div className="w-14 h-14 md:w-16 md:h-16 bg-white/10 rounded-lg border border-white/20 flex items-center justify-center">
+                                            <Package size={20} className="text-gray-400 md:w-6 md:h-6" />
+                                        </div>
+                                        <div className="absolute -top-1 -right-1 md:-top-2 md:-right-2 w-5 h-5 md:w-6 md:h-6 bg-white text-black rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold">
+                                            {item.quantity}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-xs md:text-sm font-medium text-white mb-1 truncate">{item.name}</h4>
+                                        <p className="text-[10px] md:text-xs text-gray-400">SKU: {item.sku}</p>
+                                    </div>
+                                    <div className="text-sm md:text-base font-semibold text-white flex-shrink-0">
+                                        ${(item.price * item.quantity).toFixed(2)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Discount Code */}
+                        <div className="mb-4 md:mb-6">
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="Discount code" 
+                                    className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 md:px-4 py-2 md:py-3 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-xs md:text-sm"
+                                />
+                                <button className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-4 md:px-6 py-2 md:py-3 rounded-lg transition-colors text-xs md:text-sm whitespace-nowrap">
+                                    Apply
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Totals */}
+                        <div className="space-y-2 md:space-y-3 mb-4 md:mb-6 pb-4 md:pb-6 border-b border-neon-cyan/20">
+                            <div className="flex justify-between text-sm md:text-base text-gray-300">
+                                <span>Subtotal</span>
+                                <span className="font-medium">${subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm md:text-base text-gray-300">
+                                <span>Shipping</span>
+                                <span className="font-medium text-neon-cyan">{shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}</span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex justify-between items-center">
+                            <span className="text-base md:text-lg font-bold text-white">Total</span>
+                            <div className="text-right">
+                                <div className="text-[10px] md:text-xs text-neon-cyan mb-0.5 md:mb-1 tracking-wider">USD</div>
+                                <div className="text-xl md:text-2xl font-bold bg-gradient-to-r from-neon-cyan to-neon-pink bg-clip-text text-transparent">${total.toFixed(2)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Privacy Notice */}
+                    <div className="mt-4 md:mt-6 bg-black/40 border border-neon-cyan/30 rounded-lg p-3 md:p-4 shadow-[0_0_10px_rgba(0,255,255,0.1)]">
+                        <div className="flex items-start gap-2 md:gap-3">
+                            <Lock size={16} className="text-neon-cyan flex-shrink-0 mt-0.5 md:w-5 md:h-5" />
+                            <div>
+                                <p className="text-xs md:text-sm font-medium text-neon-cyan mb-0.5 md:mb-1">Discreet packaging</p>
+                                <p className="text-[10px] md:text-xs text-gray-400">All orders are shipped in plain, unmarked packaging for your privacy.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    );
+};
+
+// NEW: ShopView
+const ShopView: React.FC<{ 
+  onProductClick: (p: Product) => void; 
+  initialSearch: string; 
+  allProducts: Product[]; 
+  initialCategory?: string;
+}> = ({ onProductClick, initialSearch, allProducts, initialCategory }) => {
+  const [filterCategory, setFilterCategory] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'NEW' | 'PRICE_ASC' | 'PRICE_DESC'>('NEW');
+
+  // Update local filter if prop changes
+  useEffect(() => {
+    if (initialCategory) setFilterCategory(initialCategory);
+  }, [initialCategory]);
+
+  // Filter Logic
+  const filteredProducts = allProducts.filter(p => {
+    const matchesSearch = initialSearch ? (p.name.toLowerCase().includes(initialSearch.toLowerCase()) || 
+                          p.category.toLowerCase().includes(initialSearch.toLowerCase())) : true;
+    
+    const matchesCategory = filterCategory === 'ALL' || p.category === filterCategory;
+    
+    return matchesSearch && matchesCategory;
+  }).sort((a, b) => {
+    if (sortBy === 'PRICE_ASC') return a.price - b.price;
+    if (sortBy === 'PRICE_DESC') return b.price - a.price;
+    return 0; 
+  });
+
+  return (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-6 min-h-screen max-w-7xl mx-auto">
+       <button onClick={() => setFilterCategory('ALL')} className="flex items-center gap-2 text-neon-cyan hover:text-white font-display text-sm mb-8 tracking-wider uppercase transition-colors">
+         <Rewind size={16} fill="currentColor"/> Reset Filters
+       </button>
+       
+       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 border-b border-neon-purple/30 pb-6 gap-6">
+          <div>
+              <div className="text-neon-pink font-display text-xs mb-3 tracking-widest">BROWSE COLLECTION</div>
+              <h1 className="font-display text-4xl md:text-5xl text-white font-black uppercase">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink">
+                  {filterCategory === 'ALL' ? 'All Products' : filterCategory}
+                </span>
+              </h1>
+              <p className="text-gray-400 text-sm mt-2">{filteredProducts.length} items available</p>
+          </div>
+
+          <div className="flex flex-col items-start md:items-end gap-4 w-full md:w-auto">
+              {/* 排序选项 */}
+              <div className="flex items-center gap-2 bg-black/40 border border-white/20 px-4 py-3">
+                <Sliders size={16} className="text-gray-400" />
+                <select 
+                  value={sortBy} 
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="bg-transparent text-white font-display text-sm outline-none uppercase cursor-pointer"
+                >
+                  <option value="NEW">New Arrivals</option>
+                  <option value="PRICE_ASC">Price: Low to High</option>
+                  <option value="PRICE_DESC">Price: High to Low</option>
+                </select>
+             </div>
+
+             {/* Desktop Category Pills - 优化样式 */}
+             <div className="hidden md:flex flex-wrap gap-2 justify-end max-w-2xl">
+                 <button 
+                    onClick={() => setFilterCategory('ALL')} 
+                    className={`px-5 py-2 text-xs font-display font-bold border transition-all ${
+                        filterCategory === 'ALL' 
+                        ? 'bg-neon-pink border-neon-pink text-white shadow-[0_0_15px_rgba(255,0,255,0.5)]' 
+                        : 'border-white/20 text-gray-400 hover:border-white/50 hover:text-white'
+                    }`}
+                 >
+                    ALL
+                 </button>
+                 {Object.keys(CATEGORY_TREE).map(cat => (
+                    <button 
+                        key={cat} 
+                        onClick={() => setFilterCategory(cat)} 
+                        className={`px-5 py-2 text-xs font-display font-bold border transition-all ${
+                            filterCategory === cat 
+                            ? 'bg-neon-cyan border-neon-cyan text-black shadow-[0_0_15px_rgba(0,255,255,0.5)]' 
+                            : 'border-white/20 text-gray-400 hover:border-white/50 hover:text-white'
+                        }`}
+                    >
+                        {cat}
+                    </button>
+                 ))}
+             </div>
+          </div>
+       </div>
+
+       {filteredProducts.length === 0 ? (
+          <div className="text-center py-32 border border-dashed border-white/10 bg-black/20">
+             <div className="text-neon-yellow font-display text-3xl mb-4 font-black">NO RESULTS</div>
+             <p className="text-gray-500 text-sm">Try adjusting your filters or search terms</p>
+          </div>
+       ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
+            {filteredProducts.map(p => (
+               <ProductCard key={p.id} product={p} onClick={() => onProductClick(p)} />
+            ))}
+          </div>
+       )}
+    </div>
+  );
+};
+
+const ProductDetailView: React.FC<{ product: Product; onAddToCart: (p: Product) => void; onBack: () => void; onProductClick: (p: Product) => void; allProducts: Product[] }> = ({ product, onAddToCart, onBack, onProductClick, allProducts }) => {
+  const [activeTab, setActiveTab] = useState<'DESC' | 'SPECS' | 'REVIEWS'>('DESC');
+  const [reviews, setReviews] = useState(REVIEWS_MOCK);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [selectedQty, setSelectedQty] = useState(1);
+  
+  // Mixed Media Gallery Logic
+  const mediaList = [
+    ...(product.mainVideo ? [{ type: 'video', src: product.mainVideo }] : []),
+    ...product.images.map(src => ({ type: 'image', src }))
+  ];
+  
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Reset active media when product changes
+  useEffect(() => {
+    setActiveMediaIndex(0);
+  }, [product.id]);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!imgRef.current) return;
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - left) / width;
+    const y = (e.clientY - top) / height;
+    const moveX = (0.5 - x) * 100;
+    const moveY = (0.5 - y) * 100;
+    imgRef.current.style.transform = `scale(1.25) translate(${moveX}px, ${moveY}px)`;
+  };
+
+  const handleMouseLeave = () => {
+    if (imgRef.current) {
+        imgRef.current.style.transform = 'scale(1) translate(0,0)';
+    }
+  };
+
+  const handleAddReview = (newReview: any) => {
+    setReviews([newReview, ...reviews]);
+    setActiveTab('REVIEWS');
+  };
+
+  let related = allProducts.filter(p => p.category === product.category && p.id !== product.id);
+  // Ensure we have some related items
+  if (related.length < 3) {
+      const others = allProducts.filter(p => p.category !== product.category && p.id !== product.id);
+      related = [...related, ...others].slice(0, 3);
+  } else {
+      related = related.slice(0, 3);
+  }
+
+  return (
+    <div className="pt-32 md:pt-48 pb-32 md:pb-24 px-4 md:px-6 min-h-screen">
+       <button onClick={onBack} className="max-w-7xl mx-auto flex items-center gap-2 text-neon-cyan hover:text-white font-display text-sm mb-6 tracking-wider uppercase transition-colors">
+         <Rewind size={16} fill="currentColor"/> Back to Shop
+       </button>
+       
+       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-16 mb-20">
+         
+         {/* Left: Media Gallery - Sticky on desktop */}
+         <div className="lg:sticky lg:top-32 h-fit bg-synth-bg z-10 self-start">
+             <div className="border border-neon-purple/30 p-2 bg-black/50 shadow-[0_0_30px_rgba(255,0,255,0.3)] mb-4">
+                 <div 
+                    className="aspect-square relative overflow-hidden group cursor-crosshair bg-black w-full"
+                    onMouseMove={mediaList[activeMediaIndex]?.type === 'image' ? handleMouseMove : undefined}
+                    onMouseLeave={mediaList[activeMediaIndex]?.type === 'image' ? handleMouseLeave : undefined}
+                 >
+                    {mediaList[activeMediaIndex]?.type === 'video' ? (
+                        <video 
+                            src={mediaList[activeMediaIndex].src} 
+                            controls 
+                            autoPlay
+                            loop
+                            muted
+                            className="w-full h-full object-cover"
+                            poster={product.images[0]} 
+                        />
+                    ) : (
+                        <img 
+                            ref={imgRef}
+                            src={mediaList[activeMediaIndex]?.src || product.images[0]} 
+                            className="w-full h-full object-cover mix-blend-normal transition-transform duration-100 ease-out" 
+                            alt={product.name}
+                        />
+                    )}
+                    {/* 图片缩放提示 */}
+                    {mediaList[activeMediaIndex]?.type === 'image' && (
+                        <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-sm px-2 py-1 text-[10px] text-gray-400 font-display opacity-0 group-hover:opacity-100 transition-opacity">
+                            HOVER TO ZOOM
+                        </div>
+                    )}
+                 </div>
+             </div>
+             
+             {/* Thumbnails */}
+             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {mediaList.length > 0 ? mediaList.map((item, i) => (
+                    <div 
+                        key={i} 
+                        className={`w-16 h-16 md:w-20 md:h-20 border cursor-pointer relative flex-shrink-0 transition-all ${
+                            activeMediaIndex === i 
+                            ? 'border-neon-cyan shadow-[0_0_10px_rgba(0,255,255,0.5)]' 
+                            : 'border-white/20 hover:border-white/50'
+                        }`}
+                        onClick={() => setActiveMediaIndex(i)}
+                    >
+                        {item.type === 'video' ? (
+                            <div className="w-full h-full bg-gray-900 flex items-center justify-center text-neon-pink">
+                                <Play size={24} fill="currentColor" />
+                            </div>
+                        ) : (
+                            <img src={item.src} className="w-full h-full object-cover" alt="thumbnail" />
+                        )}
+                        {item.type === 'video' && <div className="absolute bottom-1 right-1 bg-black/80 text-white p-0.5 rounded-full"><Film size={10}/></div>}
+                    </div>
+                )) : (
+                    <div className="text-gray-500 text-sm">No media available</div>
+                )}
+             </div>
+         </div>
+
+         {/* Right: Info */}
+         <div className="w-full flex flex-col gap-6">
+            {/* 限时优惠标签 */}
+            <LimitedTimeOffer />
+            
+            <div>
+               <div className="text-neon-purple font-display text-xs uppercase mb-2 tracking-widest">{product.category} // SKU: {product.sku}</div>
+               <h1 className="font-display text-3xl md:text-5xl text-white font-black uppercase mb-3 leading-tight">
+                   {product.name}
+               </h1>
+               <DemandIndicator />
+            </div>
+            
+            {/* 价格和评分 */}
+            <div className="flex items-center gap-6 border-b border-white/10 pb-6">
+               <div>
+                 <div className="text-4xl md:text-5xl font-display text-neon-yellow text-glow">${(() => {
+                   const discounts = [0, 10, 20];
+                   const discount = discounts[selectedQty - 1] || 0;
+                   const discountedPrice = product.price * (1 - discount / 100);
+                   const total = discountedPrice * selectedQty;
+                   return total.toFixed(2);
+                 })()}</div>
+                 {selectedQty > 1 && (
+                   <div className="text-sm text-gray-400 line-through mt-1">${(product.price * selectedQty).toFixed(2)}</div>
+                 )}
+               </div>
+               <div className="flex items-center gap-1 text-neon-cyan">
+                  <Star size={18} fill="currentColor" />
+                  <Star size={18} fill="currentColor" />
+                  <Star size={18} fill="currentColor" />
+                  <Star size={18} fill="currentColor" />
+                  <Star size={18} />
+                  <span className="text-gray-400 text-sm ml-2 font-display">({reviews.length})</span>
+               </div>
+            </div>
+
+            <p className="text-gray-300 font-body text-base md:text-lg leading-relaxed">{product.description}</p>
+            
+            {/* 批量折扣和购买按钮 */}
+            <div>
+               <VolumeDiscount price={product.price} selectedQty={selectedQty} onSelectQty={setSelectedQty} />
+               <RetroButton onClick={() => {
+                   const discounts = [0, 10, 20];
+                   const discount = discounts[selectedQty - 1] || 0;
+                   const discountedPrice = product.price * (1 - discount / 100);
+                   const discountedProduct = {
+                     ...product,
+                     price: discountedPrice,
+                     volumeQty: selectedQty,
+                     volumeDiscount: discount
+                   };
+                   for (let i = 0; i < selectedQty; i++) {
+                     onAddToCart(discountedProduct);
+                   }
+                 }} className="w-full py-4 text-lg" icon={<Zap size={20} fill="currentColor"/>}>
+                   Add to Cart
+               </RetroButton>
+            </div>
+
+            <BundleDeal mainProduct={product} />
+
+            {/* Trust Badges - 优化为4个 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-6 border-y border-white/10">
+                <div className="text-center flex flex-col items-center gap-2 group">
+                    <Shield className="text-neon-cyan group-hover:scale-110 transition-transform" size={28} />
+                    <span className="text-[10px] font-display uppercase text-gray-400">100% Secure</span>
+                </div>
+                <div className="text-center flex flex-col items-center gap-2 group">
+                    <Package className="text-neon-pink group-hover:scale-110 transition-transform" size={28} />
+                    <span className="text-[10px] font-display uppercase text-gray-400">Discreet Ship</span>
+                </div>
+                <div className="text-center flex flex-col items-center gap-2 group">
+                    <Truck className="text-neon-yellow group-hover:scale-110 transition-transform" size={28} />
+                    <span className="text-[10px] font-display uppercase text-gray-400">Fast Delivery</span>
+                </div>
+                <div className="text-center flex flex-col items-center gap-2 group">
+                    <Lock className="text-neon-purple group-hover:scale-110 transition-transform" size={28} />
+                    <span className="text-[10px] font-display uppercase text-gray-400">Privacy First</span>
+                </div>
+            </div>
+
+            {/* Rich Details Tabs - 优化样式 */}
+            <div className="border border-white/10 bg-black/30 mt-4">
+                <div className="flex border-b border-white/10">
+                    <button 
+                        onClick={() => setActiveTab('DESC')}
+                        className={`flex-1 py-4 font-display text-xs md:text-sm font-bold uppercase tracking-wider transition-all ${
+                            activeTab === 'DESC' 
+                            ? 'text-neon-cyan border-b-2 border-neon-cyan bg-neon-cyan/5' 
+                            : 'text-gray-400 hover:bg-white/5'
+                        }`}
+                    >
+                        Features
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('SPECS')}
+                        className={`flex-1 py-4 font-display text-xs md:text-sm font-bold uppercase tracking-wider transition-all ${
+                            activeTab === 'SPECS' 
+                            ? 'text-neon-cyan border-b-2 border-neon-cyan bg-neon-cyan/5' 
+                            : 'text-gray-400 hover:bg-white/5'
+                        }`}
+                    >
+                        Specs
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('REVIEWS')}
+                        className={`flex-1 py-4 font-display text-xs md:text-sm font-bold uppercase tracking-wider transition-all ${
+                            activeTab === 'REVIEWS' 
+                            ? 'text-neon-cyan border-b-2 border-neon-cyan bg-neon-cyan/5' 
+                            : 'text-gray-400 hover:bg-white/5'
+                        }`}
+                    >
+                        Reviews ({reviews.length})
+                    </button>
+                </div>
+                <div className="p-6 min-h-[400px]">
+                    {activeTab === 'DESC' && (
+                        <div className="space-y-4">
+                            <ul className="space-y-3">
+                                {product.features.map(f => (
+                                    <li key={f} className="flex items-start gap-3 text-gray-300 font-body">
+                                        <CheckCircle size={16} className="text-neon-purple flex-shrink-0 mt-0.5" /> 
+                                        <span>{f}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            
+                            {product.descriptionVideo && (
+                                <div className="mt-6 border border-white/10">
+                                    <div className="bg-black/50 p-3 flex items-center gap-2 border-b border-white/10">
+                                        <Film size={16} className="text-neon-yellow"/>
+                                        <span className="text-xs font-display text-gray-400 uppercase">Product Demo</span>
+                                    </div>
+                                    <video 
+                                        src={product.descriptionVideo} 
+                                        controls 
+                                        className="w-full aspect-video bg-black"
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {activeTab === 'SPECS' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {Object.entries(product.specs).map(([k,v]) => (
+                                <div key={k} className="flex flex-col gap-2 p-4 bg-white/5 border border-white/10">
+                                    <span className="text-neon-cyan text-xs uppercase font-bold tracking-wider">{k}</span>
+                                    <span className="text-white text-sm">{v}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {activeTab === 'REVIEWS' && (
+                        <div className="space-y-6">
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 bg-black/40 p-6 border border-white/5">
+                                <div className="text-center md:text-left">
+                                    <div className="text-4xl font-display font-bold text-white mb-2">4.9</div>
+                                    <div className="flex text-neon-yellow text-sm gap-1 mb-2 justify-center md:justify-start">
+                                        <Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" />
+                                    </div>
+                                    <div className="text-xs text-gray-500">{reviews.length} verified reviews</div>
+                                </div>
+                                <button 
+                                  onClick={() => setIsReviewModalOpen(true)}
+                                  className="border-2 border-neon-cyan text-neon-cyan px-6 py-3 font-display text-xs hover:bg-neon-cyan hover:text-black transition-all uppercase font-bold"
+                                >
+                                    Write Review
+                                </button>
+                            </div>
+                            
+                            {reviews.map((r, i) => (
+                                <div key={i} className="border-b border-white/5 last:border-0 pb-6 last:pb-0">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-neon-purple to-neon-pink rounded flex items-center justify-center text-white font-bold text-sm font-display">
+                                                {r.user.substring(0, 2).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                 <div className="text-white font-bold font-display text-sm">{r.user}</div>
+                                                 <div className="text-gray-500 text-[10px] uppercase tracking-wider">{r.date} // VERIFIED</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex text-neon-yellow text-xs">
+                                            {[...Array(r.rating)].map((_, j) => <Star key={j} size={12} fill="currentColor" />)}
+                                        </div>
+                                    </div>
+                                    <p className="text-gray-300 text-sm font-body leading-relaxed mb-3 pl-13">"{r.content}"</p>
+                                    <div className="pl-13 flex gap-4 text-xs text-gray-500 font-display">
+                                        <button className="hover:text-neon-cyan flex items-center gap-1 transition-colors"><ThumbsUp size={12}/> Helpful (12)</button>
+                                        <button className="hover:text-neon-pink flex items-center gap-1 transition-colors"><MessageCircle size={12}/> Reply</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+         </div>
+       </div>
+
+       <WriteReviewModal 
+         isOpen={isReviewModalOpen} 
+         onClose={() => setIsReviewModalOpen(false)} 
+         onSubmit={handleAddReview} 
+       />
+
+       {/* 相关推荐 */}
+       {related.length > 0 && (
+         <div className="max-w-7xl mx-auto border-t border-white/10 pt-16">
+            <h3 className="font-display text-2xl md:text-3xl text-white mb-8 uppercase font-black">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-pink">You May Also Like</span>
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8">
+              {related.map(p => <ProductCard key={p.id} product={p} onClick={() => onProductClick(p)} />)}
+            </div>
+         </div>
+       )}
+    </div>
+  );
+};
+
+const Footer: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavigate }) => (
+    <footer className="bg-black/90 text-white pt-12 pb-32 md:pb-24 border-t border-neon-purple/30 font-body relative z-10">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+            {/* Column 1: Brand */}
+            <div>
+                <h2 className="font-display text-2xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-pink mb-6">NEBULA</h2>
+                <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                    Curating high-tech pleasure for the retro-future soul. 
+                    We bridge the gap between biological desire and digital perfection.
+                </p>
+                <div className="flex gap-4">
+                    <a href="#" className="w-10 h-10 border border-white/20 flex items-center justify-center hover:bg-neon-cyan hover:text-black transition-all hover:border-neon-cyan"><Facebook size={18}/></a>
+                    <a href="#" className="w-10 h-10 border border-white/20 flex items-center justify-center hover:bg-neon-pink hover:text-black transition-all hover:border-neon-pink"><Instagram size={18}/></a>
+                    <a href="#" className="w-10 h-10 border border-white/20 flex items-center justify-center hover:bg-neon-yellow hover:text-black transition-all hover:border-neon-yellow"><Twitter size={18}/></a>
+                </div>
+            </div>
+
+            {/* Column 2: Shop */}
+            <div>
+                <h3 className="font-display text-neon-cyan font-bold uppercase tracking-widest mb-6 text-sm">Mainframe</h3>
+                <ul className="space-y-4 text-sm text-gray-400">
+                    <li><button onClick={() => onNavigate('SHOP')} className="hover:text-white transition-colors text-left">All Products</button></li>
+                    <li><button onClick={() => onNavigate('LOOKBOOK')} className="hover:text-white transition-colors text-left">Lookbook</button></li>
+                    <li><button onClick={() => onNavigate('SHOP')} className="hover:text-white transition-colors text-left">Best Sellers</button></li>
+                    <li><button onClick={() => onNavigate('SHOP')} className="hover:text-white transition-colors text-left">Gift Cards</button></li>
+                </ul>
+            </div>
+
+            {/* Column 3: Support */}
+            <div>
+                <h3 className="font-display text-neon-pink font-bold uppercase tracking-widest mb-6 text-sm">Support Node</h3>
+                <ul className="space-y-4 text-sm text-gray-400">
+                    <li><button onClick={() => onNavigate('TRACKING')} className="hover:text-white transition-colors text-left">Order Tracking (Signal)</button></li>
+                    <li><button onClick={() => onNavigate('FAQ')} className="hover:text-white transition-colors text-left">FAQ Database</button></li>
+                    <li><button onClick={() => onNavigate('SHIPPING')} className="hover:text-white transition-colors text-left">Shipping Protocol</button></li>
+                    <li><button onClick={() => onNavigate('RETURNS')} className="hover:text-white transition-colors text-left">Returns & Exchanges</button></li>
+                    <li><button onClick={() => onNavigate('CONTACT')} className="hover:text-white transition-colors text-left">Contact Uplink</button></li>
+                </ul>
+            </div>
+
+            {/* Column 4: Newsletter */}
+            <div>
+                <h3 className="font-display text-neon-yellow font-bold uppercase tracking-widest mb-6 text-sm">Encrypt_Feed</h3>
+                <p className="text-gray-400 text-xs mb-4">Join 50,000+ nodes receiving exclusive drops.</p>
+                <form className="flex flex-col gap-2">
+                    <input type="email" placeholder="EMAIL_ADDRESS" className="bg-white/5 border border-white/10 p-3 text-sm text-white focus:border-neon-cyan outline-none" />
+                    <button className="bg-white text-black font-display font-bold uppercase text-xs py-3 hover:bg-neon-cyan transition-colors">Subscribe</button>
+                </form>
+            </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-xs text-gray-500 uppercase tracking-widest">
+               <span>© 2084 NEBULA CORP.</span>
+            </div>
+            <div className="flex gap-4 opacity-50">
+                <CreditCard size={24} />
+                <Lock size={24} />
+                <Shield size={24} />
+            </div>
+        </div>
+    </footer>
+);
+
+const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (p: Product) => void; allProducts: Product[]; onSelectCategory: (cat: string, subCat?: string) => void }> = ({ onNavigate, onProductClick, allProducts, onSelectCategory }) => (
+  // FIXED: Adjusted top padding to clear the double header on desktop
+  <div className="pt-24 md:pt-40">
+    <div className="bg-neon-yellow text-black overflow-hidden py-1 border-y-2 border-black relative z-30">
+        <div className="flex gap-8 whitespace-nowrap animate-marquee font-display font-bold text-sm tracking-widest uppercase">
+        {[...Array(10)].map((_, i) => (
+            <span key={i} className="flex items-center gap-4">NEURAL LINK ESTABLISHED <Activity size={12} /> SECURE CONNECTION <Globe size={12} /> FREE SHIPPING ON ORDERS {'>'} 500 CREDITS</span>
+        ))}
+        </div>
+    </div>
+    
+    <HeroCarousel onNavigate={onNavigate} />
+
+    {/* BRAND VALUES - OPTIMIZED FOR MOBILE */}
+    <section className="py-8 md:py-10 bg-black/40 border-y border-white/5">
+        <div className="max-w-7xl mx-auto px-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+            <div className="flex flex-row md:flex-col items-center md:items-center text-left md:text-center p-3 md:p-4 group">
+                <Shield className="w-6 h-6 md:w-10 md:h-10 text-neon-cyan flex-shrink-0" />
+                <div className="ml-3 md:ml-0 md:mt-3">
+                    <h3 className="font-display font-bold text-xs md:text-base text-white uppercase">100% Secure</h3>
+                    <p className="text-[10px] md:text-xs text-gray-500 mt-0.5">Encrypted Checkout</p>
+                </div>
+            </div>
+            <div className="flex flex-row md:flex-col items-center md:items-center text-left md:text-center p-3 md:p-4 group">
+                <Truck className="w-6 h-6 md:w-10 md:h-10 text-neon-pink flex-shrink-0" />
+                <div className="ml-3 md:ml-0 md:mt-3">
+                    <h3 className="font-display font-bold text-xs md:text-base text-white uppercase">Fast Shipping</h3>
+                    <p className="text-[10px] md:text-xs text-gray-500 mt-0.5">Plain Packaging</p>
+                </div>
+            </div>
+            <div className="flex flex-row md:flex-col items-center md:items-center text-left md:text-center p-3 md:p-4 group">
+                <Package className="w-6 h-6 md:w-10 md:h-10 text-neon-yellow flex-shrink-0" />
+                <div className="ml-3 md:ml-0 md:mt-3">
+                    <h3 className="font-display font-bold text-xs md:text-base text-white uppercase">Warranty</h3>
+                    <p className="text-[10px] md:text-xs text-gray-500 mt-0.5">30-Day Return</p>
+                </div>
+            </div>
+            <div className="flex flex-row md:flex-col items-center md:items-center text-left md:text-center p-3 md:p-4 group">
+                <Star className="w-6 h-6 md:w-10 md:h-10 text-neon-purple fill-neon-purple flex-shrink-0" />
+                <div className="ml-3 md:ml-0 md:mt-3">
+                    <h3 className="font-display font-bold text-xs md:text-base text-white uppercase">Top Rated</h3>
+                    <p className="text-[10px] md:text-xs text-gray-500 mt-0.5">4.9/5.0 Rating</p>
+                </div>
+            </div>
+        </div>
+        </div>
+    </section>
+
+    {/* CATEGORIES GRID - 提前到第3位 */}
+    <section className="py-10 md:py-16 px-6 max-w-7xl mx-auto relative z-10">
+       <div className="text-center mb-8 md:mb-10">
+           <h2 className="font-display text-2xl md:text-4xl text-white italic font-black">
+               <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink">SHOP BY CATEGORY</span>
+           </h2>
+       </div>
+       
+       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+           {Object.entries(CATEGORY_TREE).map(([cat, subcategories], i) => {
+               const categoryProducts = allProducts.filter(p => p.category === cat);
+               const productImage = categoryProducts.length > 0 
+                   ? categoryProducts[0].images[0] 
+                   : 'https://images.unsplash.com/photo-1526566661780-1a67ea3c863e?auto=format&fit=crop&q=80&w=800';
+               
+               const colors = [
+                   { border: 'neon-cyan', text: 'text-neon-cyan' },
+                   { border: 'neon-pink', text: 'text-neon-pink' },
+                   { border: 'neon-purple', text: 'text-neon-purple' },
+                   { border: 'neon-yellow', text: 'text-neon-yellow' },
+               ];
+               const color = colors[i % 4];
+               
+               return (
+                   <div 
+                       key={cat} 
+                       onClick={() => onSelectCategory(cat)} 
+                       className={`relative aspect-square group cursor-pointer overflow-hidden border border-white/20 hover:border-${color.border} transition-all duration-500 bg-black`}
+                   >
+                       <div className="absolute inset-0">
+                           <img 
+                               src={productImage}
+                               alt={cat}
+                               className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" 
+                           />
+                       </div>
+                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                       <div className="absolute top-2 right-2 z-20">
+                           <div className={`bg-black/80 backdrop-blur-sm px-2 py-1 text-[10px] font-display font-bold ${color.text}`}>
+                               {categoryProducts.length || subcategories.length}
+                           </div>
+                       </div>
+                       <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 z-10">
+                           <h3 className={`font-display text-xl md:text-2xl text-white font-black uppercase mb-1 group-hover:${color.text} transition-colors drop-shadow-[0_2px_10px_rgba(0,0,0,1)]`}>
+                               {cat}
+                           </h3>
+                           <div className="flex items-center gap-1 text-[10px] text-gray-400 group-hover:text-white transition-colors font-display uppercase">
+                               <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
+                           </div>
+                       </div>
+                       <div className={`absolute bottom-0 left-0 w-full h-0.5 bg-${color.border} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                   </div>
+               );
+           })}
+       </div>
+    </section>
+    
+    {/* FEATURED PRODUCTS */}
+    <FeaturedProductsSection 
+        allProducts={allProducts}
+        onProductClick={onProductClick}
+        onNavigate={onNavigate}
+    />
+    
+    {/* FLASH SALE BANNER - 新增 */}
+    <section className="py-6 md:py-8 bg-gradient-to-r from-neon-pink/10 via-neon-purple/10 to-neon-cyan/10 border-y border-neon-pink/30">
+        <div className="max-w-7xl mx-auto px-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-neon-pink/20 rounded-full flex items-center justify-center animate-pulse">
+                        <Timer size={24} className="text-neon-pink" />
+                    </div>
+                    <div>
+                        <h3 className="font-display text-lg md:text-xl font-black text-white uppercase tracking-wider">Flash Sale Active</h3>
+                        <p className="text-xs md:text-sm text-gray-400">Up to 20% off on bulk orders</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={() => onNavigate('SHOP')}
+                    className="px-6 py-3 bg-neon-pink hover:bg-neon-pink/80 text-black font-display font-bold uppercase text-sm tracking-wider transition-all flex items-center gap-2"
+                >
+                    <span>Shop Now</span>
+                    <ArrowRight size={16} />
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <SocialVideoFeed products={allProducts} onProductClick={onProductClick} />
+
+   {/* TESTIMONIALS - 左右按钮轮播 */}
+    <section className="py-12 md:py-16 bg-black relative overflow-hidden">
+        <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-10 left-1/4 w-64 h-64 bg-neon-purple rounded-full blur-[100px]"></div>
+            <div className="absolute bottom-10 right-1/4 w-64 h-64 bg-neon-cyan rounded-full blur-[100px]"></div>
+        </div>
+        
+        <div className="max-w-6xl mx-auto px-6 relative z-10">
+            <div className="text-center mb-8">
+                <h2 className="font-display text-2xl md:text-3xl text-white uppercase tracking-wider italic font-black inline-block">
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink">What Customers Say</span>
+                    <div className="h-[2px] bg-gradient-to-r from-transparent via-neon-cyan to-transparent mt-2"></div>
+                </h2>
+                <p className="text-gray-500 text-xs mt-3 font-display uppercase tracking-widest">Real feedback from verified buyers</p>
+            </div>
+            
+            {/* 轮播容器 */}
+            <TestimonialCarousel reviews={REVIEWS_MOCK} />
+            
+            {/* 底部统计 */}
+            <div className="text-center mt-8">
+                <p className="text-gray-500 text-xs mb-3 font-display uppercase tracking-widest">Join {REVIEWS_MOCK.length * 127}+ Satisfied Users</p>
+                <button className="px-6 py-2.5 bg-gradient-to-r from-neon-cyan to-neon-purple text-black font-display font-bold uppercase text-xs tracking-wider hover:shadow-lg hover:shadow-neon-cyan/50 transition-all transform hover:scale-105 rounded">
+                    Share Your Experience
+                </button>
+            </div>
+        </div>
+    </section>
+
+   {/* FAQ SECTION */}
+    <section className="py-12 md:py-20 bg-gradient-to-b from-black via-[#0a0614] to-synth-bg relative overflow-hidden">
+        <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-10 right-20 w-64 h-64 bg-neon-yellow rounded-full blur-[100px]"></div>
+            <div className="absolute bottom-10 left-20 w-64 h-64 bg-neon-pink rounded-full blur-[100px]"></div>
+        </div>
+        
+        <div className="max-w-4xl mx-auto px-6 relative z-10">
+            <HomeFAQSection />
+        </div>
+    </section>
+  </div>
+);
+
+const App: React.FC = () => {
+  const [view, setView] = useState<ViewState>('HOME');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [ageVerified, setAgeVerified] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isImporterOpen, setIsImporterOpen] = useState(false);
+
+  useEffect(() => {
+    // 优先从 localStorage 加载产品数据
+    const storedProducts = localStorage.getItem('CR_CATALOG_DATA');
+    if (storedProducts) {
+      try {
+        setProducts(JSON.parse(storedProducts));
+      } catch (e) {
+        console.error('Failed to parse stored products', e);
+        fetchProducts().then(setProducts);
+      }
+    } else {
+      fetchProducts().then(setProducts);
+    }
+    
+    const verified = localStorage.getItem('nebula_age_verified');
+    if (verified) setAgeVerified(true);
+  }, []);
+
+  // 监听快捷键 Ctrl+Shift+I 打开导入器
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+        e.preventDefault();
+        setIsImporterOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+
+  // 处理CSV导入
+  const handleImport = (newProducts: Product[]) => {
+    setProducts(newProducts);
+    localStorage.setItem('CR_CATALOG_DATA', JSON.stringify(newProducts));
+    showToast(`成功导入 ${newProducts.length} 个产品`);
+    setIsImporterOpen(false);
+  };
+
+  const handleVerifyAge = () => {
+    localStorage.setItem('nebula_age_verified', 'true');
+    setAgeVerified(true);
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const addToCart = (product: Product) => {
+    setCart(prev => {
+      const existing = prev.find(p => p.id === product.id);
+      if (existing) {
+        return prev.map(p => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+    setIsCartOpen(true);
+    showToast("ADDED TO SYSTEM");
+  };
+
+  const updateCartQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, quantity: Math.max(0, item.quantity + delta) };
+      }
+      return item;
+    }).filter(item => item.quantity > 0));
+  };
+
+  const handleCheckout = async () => {
+     setCheckoutLoading(true);
+     setView('CHECKOUT');
+     setIsCartOpen(false);
+     setCheckoutLoading(false);
+  };
+  
+  const processPayment = async (method: string) => {
+      setCheckoutLoading(true);
+      const url = await createCheckoutSession(cart, method);
+      window.location.href = url;
+      setCheckoutLoading(false);
+  }
+
+  const navigateToProduct = (p: Product) => {
+      setSelectedProduct(p);
+      setView('PRODUCT_DETAIL');
+      window.scrollTo(0,0);
+  };
+
+  const navigateToCategory = (cat: string, subCat?: string) => {
+      setCategoryFilter(cat);
+      setView('SHOP');
+      window.scrollTo(0,0);
+  };
+
+  if (!ageVerified) return <AgeGate onVerify={handleVerifyAge} />;
+
+  return (
+    <div className="bg-synth-bg min-h-screen text-white selection:bg-neon-pink selection:text-white font-body relative">
+        <Navbar 
+            cartCount={cart.reduce((a,b)=>a+b.quantity,0)} 
+            onOpenCart={() => setIsCartOpen(true)}
+            onNavigate={(v) => { setView(v); window.scrollTo(0,0); }}
+            onToggleSearch={() => setIsSearchOpen(true)}
+            onToggleSettings={() => setIsSettingsOpen(true)}
+        />
+        
+        <DesktopCategoryNav onSelect={navigateToCategory} />
+
+        {/* Mobile Category Bar: now rendered in App for better persistence */}
+        {(view === 'HOME' || view === 'SHOP') && (
+            <MobileCategoryBar 
+                onSelect={(cat) => {
+                    navigateToCategory(cat);
+                }} 
+                activeCat={categoryFilter} 
+            />
+        )}
+
+        <SearchBar 
+            isOpen={isSearchOpen} 
+            onClose={() => setIsSearchOpen(false)} 
+            onSearch={(q) => { setSearchQuery(q); setView('SHOP'); setIsSearchOpen(false); }}
+        />
+        
+        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        
+        <CartDrawer 
+            isOpen={isCartOpen} 
+            onClose={() => setIsCartOpen(false)} 
+            items={cart} 
+            onUpdateQty={updateCartQty}
+            onCheckout={handleCheckout}
+            isProcessing={checkoutLoading}
+        />
+
+        {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
+
+        {/* CSV 导入器 */}
+        {isImporterOpen && (
+          <CSVImporter 
+            onImport={handleImport} 
+            onClose={() => setIsImporterOpen(false)} 
+          />
+        )}
+
+        <main>
+            {view === 'HOME' && (
+                <HomeView 
+                    onNavigate={(v) => { setView(v); window.scrollTo(0,0); }}
+                    onProductClick={navigateToProduct}
+                    allProducts={products}
+                    onSelectCategory={navigateToCategory}
+                />
+            )}
+            
+            {view === 'SHOP' && (
+                <ShopView 
+                    onProductClick={navigateToProduct}
+                    initialSearch={searchQuery}
+                    allProducts={products}
+                    initialCategory={categoryFilter}
+                />
+            )}
+
+            {view === 'PRODUCT_DETAIL' && selectedProduct && (
+                <ProductDetailView 
+                    product={selectedProduct} 
+                    onAddToCart={addToCart}
+                    onBack={() => setView('SHOP')}
+                    onProductClick={navigateToProduct}
+                    allProducts={products}
+                />
+            )}
+
+            {view === 'CHECKOUT' && (
+                <CheckoutView 
+                    cart={cart}
+                    onBack={() => setView('SHOP')}
+                    onProcessPayment={processPayment}
+                    isProcessing={checkoutLoading}
+                />
+            )}
+            
+            {view === 'LOOKBOOK' && <LookbookView />}
+            
+            {view === 'BLOG' && <BlogView onRead={(id) => console.log(id)} />}
+            
+            {view === 'CONTACT' && <ContactView />}
+            
+            {view === 'ABOUT' && <InfoPageView title="SYSTEM CORE // ABOUT" content={<><p className="mb-4 text-lg">Founded in 2084, Nebula Corp bridges the gap between biological desire and digital perfection.</p><p className="text-lg">We specialize in haptic interfaces, bio-compatible materials, and secure pleasure protocols.</p></>} />}
+            
+            {view === 'FAQ' && <FaqView />}
+            
+            {view === 'SHIPPING' && <ShippingView />}
+            
+            {view === 'RETURNS' && <ReturnsView />}
+            
+            {view === 'TRACKING' && <TrackingView />}
+            
+            {(view === 'PRIVACY' || view === 'TERMS') && <InfoPageView title="LEGAL PROTOCOLS" content={<><p className="text-gray-300 mb-4 text-lg">By accessing the Nebula Mainframe, you agree to bio-metric scanning and data retention protocols.</p><p className="text-gray-300 mb-4 text-lg">Resistance is futile.</p></>} />}
+        </main>
+
+        {view !== 'CHECKOUT' && <Footer onNavigate={(v) => { setView(v); window.scrollTo(0,0); }} />}
+    </div>
+  );
+};
+
+export default App;
