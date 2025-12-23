@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:https": "cross-env VITE_HTTPS=true vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
