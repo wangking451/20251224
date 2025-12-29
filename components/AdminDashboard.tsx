@@ -68,6 +68,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
   const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
   const [showCSVImporter, setShowCSVImporter] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+
+  // Computed: 过滤后的商品列表（根据搜索）
+  const filteredProducts = productSearchTerm
+    ? products.filter(p => 
+        p.name.toLowerCase().includes(productSearchTerm.toLowerCase()) || 
+        p.sku?.toLowerCase().includes(productSearchTerm.toLowerCase())
+      )
+    : products;
+
+  // 批量删除处理
+  const handleBulkDelete = async () => {
+    if (selectedProducts.size === 0) {
+      alert('请先选择要删除的商品');
+      return;
+    }
+
+    if (!confirm(`确定删除选中的 ${selectedProducts.size} 个商品吗？此操作无法恢复。`)) {
+      return;
+    }
+
+    try {
+      setImportStatus({ msg: `正在删除 ${selectedProducts.size} 个商品...`, type: 'info' });
+      
+      // 批量删除
+      await productsAPI.bulkDelete(Array.from(selectedProducts));
+      
+      // 更新本地状态
+      onUpdateProducts(products.filter(p => !selectedProducts.has(p.id)));
+      setSelectedProducts(new Set());
+      
+      setImportStatus({ msg: `成功删除 ${selectedProducts.size} 个商品`, type: 'success' });
+    } catch (error: any) {
+      console.error('Bulk delete error:', error);
+      setImportStatus({ msg: `删除失败: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    if (selectedProducts.size === filteredProducts.length) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(filteredProducts.map(p => p.id)));
+    }
+  };
+
+  // 切换单个商品选中状态
+  const toggleProductSelection = (productId: string) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+    } else {
+      newSelected.add(productId);
+    }
+    setSelectedProducts(newSelected);
+  };
 
   // 加载订单数据
   useEffect(() => {
@@ -735,10 +792,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
     );
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex animate-fade-in">
@@ -836,8 +890,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                            type="text" 
                            placeholder="搜索名称或 SKU..." 
                            className="bg-white/5 border border-white/20 pl-10 pr-4 py-2 text-white text-sm focus:border-neon-cyan outline-none w-64 rounded"
-                           value={searchTerm}
-                           onChange={e => setSearchTerm(e.target.value)}
+                           value={productSearchTerm}
+                           onChange={e => setProductSearchTerm(e.target.value)}
                          />
                       </div>
                       
@@ -877,10 +931,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                   </div>
                 )}
                 
+                {/* 批量操作栏 */}
+                {selectedProducts.size > 0 && (
+                  <div className="mb-4 p-4 bg-neon-purple/10 border border-neon-purple/30 rounded flex items-center justify-between">
+                    <span className="text-sm text-white">已选中 {selectedProducts.size} 个商品</span>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setSelectedProducts(new Set())}
+                        className="px-4 py-2 text-sm text-gray-400 hover:text-white font-bold"
+                      >
+                        取消选择
+                      </button>
+                      <button
+                        onClick={handleBulkDelete}
+                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded flex items-center gap-2"
+                      >
+                        <Trash2 size={16}/> 批量删除
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="bg-white/5 border border-white/10 overflow-hidden rounded-lg">
                    <table className="w-full text-left">
                       <thead className="bg-black/50 text-xs font-bold text-gray-400 uppercase border-b border-white/10">
                          <tr>
+                            <th className="p-4 w-12">
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.size === filteredProducts.length && filteredProducts.length > 0}
+                                onChange={handleSelectAll}
+                                className="w-4 h-4 cursor-pointer"
+                              />
+                            </th>
                             <th className="p-4">商品信息</th>
                             <th className="p-4">分类</th>
                             <th className="p-4">价格</th>
@@ -891,6 +974,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                       <tbody className="divide-y divide-white/10">
                          {filteredProducts.map(p => (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors group">
+                               <td className="p-4">
+                                 <input
+                                   type="checkbox"
+                                   checked={selectedProducts.has(p.id)}
+                                   onChange={() => toggleProductSelection(p.id)}
+                                   className="w-4 h-4 cursor-pointer"
+                                 />
+                               </td>
                                <td className="p-4 flex items-center gap-4">
                                   <div className="w-12 h-12 bg-black border border-white/20 rounded overflow-hidden flex-shrink-0">
                                      {p.images[0] ? <img src={p.images[0]} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-gray-600"><ImageIcon size={16}/></div>}
