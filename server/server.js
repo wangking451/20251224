@@ -59,23 +59,17 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    // 生产环境：严格验证来源
-    if (process.env.NODE_ENV === 'production') {
-      if (!origin) {
-        return callback(new Error('Origin header required in production'));
-      }
-      if (allowedOrigins.indexOf(origin) === -1) {
-        console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
-      }
-    } else {
-      // 开发环境：允许无origin请求（Postman等）
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
-      }
+    // 允许没有 origin 的请求（服务器到服务器的调用、健康检查等）
+    if (!origin) {
+      return callback(null, true);
     }
+    
+    // 验证来源是否在白名单中
+    if (allowedOrigins.indexOf(origin) === -1) {
+      console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
+      return callback(new Error('Not allowed by CORS'));
+    }
+    
     callback(null, true);
   },
   credentials: true,
