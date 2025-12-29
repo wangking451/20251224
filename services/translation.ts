@@ -9,8 +9,10 @@
 
 // =================================================================
 // 【配置区域】
+// 在 .env.local 文件中设置：
+// VITE_GOOGLE_TRANSLATE_API_KEY=your_api_key
 // =================================================================
-const GOOGLE_TRANSLATE_API_KEY = 'AIzaSyAO5Hs7CVqSMynLLOOIGb4pMq6nkG9njbU'; // 获取地址: https://console.cloud.google.com/
+const GOOGLE_TRANSLATE_API_KEY = import.meta.env.VITE_GOOGLE_TRANSLATE_API_KEY || ''; // 获取地址: https://console.cloud.google.com/
 const MICROSOFT_TRANSLATOR_KEY = ''; // 获取地址: https://azure.microsoft.com/
 const LIBRETRANSLATE_URL = 'https://libretranslate.de'; // 免费公共实例
 

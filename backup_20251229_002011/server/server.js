@@ -50,33 +50,22 @@ const allowedOrigins = [
   'https://localhost:5173',
   'https://127.0.0.1:5174',
   'https://127.0.0.1:5173',
-  // 生产环境域名 - 请替换为你的实际域名
-  'https://nebula-cyber-store.vercel.app',  // 您的 Vercel 域名
-  'https://www.luremeow.com',  // 您的自定义域名
-  // 或从环境变量读取
-  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
+  // 生产环境域名，部署时取消注释并填入
+  // 'https://yourdomain.com',
+  // 'https://www.yourdomain.com'
 ];
 
 app.use(cors({
   origin: function(origin, callback) {
-    // 生产环境：严格验证来源
-    if (process.env.NODE_ENV === 'production') {
-      if (!origin) {
-        return callback(new Error('Origin header required in production'));
-      }
-      if (allowedOrigins.indexOf(origin) === -1) {
-        console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
-      }
+    // 允许没有origin的请求（如移动应用、Postman等）
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
     } else {
-      // 开发环境：允许无origin请求（Postman等）
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
-      }
+      console.warn(`⚠️ [CORS]: Blocked request from origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     }
-    callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

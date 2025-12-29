@@ -4,8 +4,14 @@ import { Product, CartItem, ViewState, StoreConfig } from './types';
 import { REVIEWS_MOCK } from './products';
 import { fetchProducts, createCheckoutSession } from './services/api';
 import { AdminDashboard } from './components/AdminDashboard';
+import AdminLogin from './components/AdminLogin';
 import { translate, LANGUAGE_CODES } from './services/translation';
 import { convertPrice, formatPrice } from './services/exchangeRate';
+import { isAdminAuthenticated, clearAdminSession, setAdminSession } from './utils/auth';
+import { productsAPI } from './services/supabase';
+
+// API 基础 URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 // --- CONSTANTS & DATA ---
 
@@ -1646,6 +1652,136 @@ const CheckoutView: React.FC<{
     const [convertedCart, setConvertedCart] = useState<CartItem[]>([]);
     const [isConverting, setIsConverting] = useState(false);
     
+    // 地址表单状态
+    const [shippingInfo, setShippingInfo] = useState({
+        email: '',
+        country: 'United States',
+        firstName: '',
+        lastName: '',
+        address: '',
+        apartment: '',
+        city: '',
+        state: '',
+        zipCode: '',
+        phone: ''
+    });
+    
+    // 表单错误状态
+    const [errors, setErrors] = useState<{[key: string]: string}>({});
+    
+    // 是否尝试过提交（用于显示错误）
+    const [attempted, setAttempted] = useState(false);
+    
+    // 验证单个字段
+    const validateField = (name: string, value: string) => {
+        switch(name) {
+            case 'email':
+                if (!value.trim()) return 'Enter an email';
+                if (!value.includes('@')) return 'Enter a valid email';
+                return '';
+            case 'firstName':
+                return !value.trim() ? 'Enter a first name' : '';
+            case 'lastName':
+                return !value.trim() ? 'Enter a last name' : '';
+            case 'address':
+                return !value.trim() ? 'Enter an address' : '';
+            case 'city':
+                return !value.trim() ? 'Enter a city' : '';
+            case 'state':
+                return !value.trim() ? 'Select a state' : '';
+            case 'zipCode':
+                return !value.trim() ? 'Enter a ZIP code' : '';
+            case 'phone':
+                return !value.trim() ? 'Enter a phone number' : '';
+            default:
+                return '';
+        }
+    };
+    
+    // 验证所有必填字段，返回实际值
+    const validateAllFields = (): { isValid: boolean; values: typeof shippingInfo } => {
+        // 🔧 处理浏览器自动填充：从 DOM 中读取实际值
+        const emailInput = document.querySelector('input[type="email"]') as HTMLInputElement;
+        const firstNameInput = document.querySelector('input[placeholder="First name"]') as HTMLInputElement;
+        const lastNameInput = document.querySelector('input[placeholder="Last name"]') as HTMLInputElement;
+        const addressInput = document.querySelector('input[placeholder="Address"]') as HTMLInputElement;
+        const cityInput = document.querySelector('input[placeholder="City"]') as HTMLInputElement;
+        const stateInput = document.querySelector('input[placeholder*="State"]') as HTMLInputElement;
+        const zipInput = document.querySelector('input[placeholder="ZIP code"]') as HTMLInputElement;
+        const phoneInput = document.querySelector('input[placeholder="Phone"]') as HTMLInputElement;
+        
+        // 如果 DOM 中有值但状态是空的，更新状态
+        const actualValues = {
+            email: emailInput?.value || shippingInfo.email,
+            country: shippingInfo.country,
+            firstName: firstNameInput?.value || shippingInfo.firstName,
+            lastName: lastNameInput?.value || shippingInfo.lastName,
+            address: addressInput?.value || shippingInfo.address,
+            apartment: shippingInfo.apartment,
+            city: cityInput?.value || shippingInfo.city,
+            state: stateInput?.value || shippingInfo.state,
+            zipCode: zipInput?.value || shippingInfo.zipCode,
+            phone: phoneInput?.value || shippingInfo.phone
+        };
+        
+        // 更新状态（同步浏览器自动填充的值）
+        setShippingInfo(actualValues);
+        
+        const newErrors: {[key: string]: string} = {};
+        const fieldOrder = ['email', 'firstName', 'lastName', 'address', 'city', 'state', 'zipCode', 'phone'];
+        
+        fieldOrder.forEach(key => {
+            const value = actualValues[key as keyof typeof actualValues];
+            const error = validateField(key, value);
+            if (error) {
+                newErrors[key] = error;
+            }
+        });
+        
+        setErrors(newErrors);
+        setAttempted(true);
+        
+        const isValid = Object.keys(newErrors).length === 0;
+        
+        // 如果验证失败，输出详细错误信息
+        if (!isValid) {
+            console.error('❌ 表单验证失败，缺少以下字段：', Object.keys(newErrors));
+            console.error('当前实际值：', JSON.stringify(actualValues, null, 2));
+        }
+        
+        // 如果有错误，滚动到第一个错误字段
+        if (!isValid) {
+            const firstErrorField = fieldOrder.find(key => newErrors[key]);
+            if (firstErrorField) {
+                // 稍微延迟以确保错误状态已更新
+                setTimeout(() => {
+                    const element = document.querySelector(`input[placeholder*="${getPlaceholder(firstErrorField)}"]`) as HTMLElement;
+                    if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        element.focus();
+                    }
+                }, 100);
+            }
+        }
+        
+        return { isValid, values: actualValues };
+    };
+    
+    // 获取字段的placeholder文本（用于定位元素）
+    const getPlaceholder = (fieldName: string) => {
+        const placeholders: {[key: string]: string} = {
+            'email': 'Email',
+            'firstName': 'First name',
+            'lastName': 'Last name',
+            'address': 'Address',
+            'city': 'City',
+            'state': 'State',
+            'zipCode': 'ZIP',
+            'phone': 'Phone'
+        };
+        return placeholders[fieldName] || '';
+    };
+    
     // 当货币或购物车变化时，重新转换价格
     useEffect(() => {
         const convertPrices = async () => {
@@ -1850,7 +1986,7 @@ const CheckoutView: React.FC<{
                     },
                     fundingSource: paypal.FUNDING.PAYPAL,
                     createOrder: async () => {
-                        const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                        const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ cart, currency: 'USD' })
@@ -1859,10 +1995,14 @@ const CheckoutView: React.FC<{
                         return orderID;
                     },
                     onApprove: async (data: any) => {
-                        const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                        const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ orderID: data.orderID })
+                            body: JSON.stringify({ 
+                                orderID: data.orderID, 
+                                cart: cart,
+                                shippingInfo: shippingInfo  // 添加收货信息
+                            })
                         });
                         const result = await response.json();
                         if (result.success) {
@@ -1892,7 +2032,7 @@ const CheckoutView: React.FC<{
                     },
                     fundingSource: paypal.FUNDING.PAYPAL,
                     createOrder: async () => {
-                        const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                        const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ cart, currency: 'USD' })
@@ -1901,10 +2041,14 @@ const CheckoutView: React.FC<{
                         return orderID;
                     },
                     onApprove: async (data: any) => {
-                        const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                        const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ orderID: data.orderID })
+                            body: JSON.stringify({ 
+                                orderID: data.orderID, 
+                                cart: cart,
+                                shippingInfo: shippingInfo  // 添加收货信息
+                            })
                         });
                         const result = await response.json();
                         if (result.success) {
@@ -1988,7 +2132,7 @@ const CheckoutView: React.FC<{
                                         console.log('⚠️ Payment already in progress');
                                         return;
                                     }
-                                    
+                                                    
                                     isProcessing = true;
                                     console.log('Google Pay button clicked');
                                     
@@ -2009,7 +2153,7 @@ const CheckoutView: React.FC<{
                                             console.log('Payment Data:', paymentData);
                                             
                                             // 创建 PayPal 订单
-                                            const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                                            const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ cart, currency: 'USD' })
@@ -2017,10 +2161,14 @@ const CheckoutView: React.FC<{
                                             const { orderID } = await response.json();
                                             
                                             // 捕获支付（使用 PayPal 后端处理）
-                                            const captureResponse = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                                            const captureResponse = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ orderID })
+                                                body: JSON.stringify({ 
+                                                    orderID, 
+                                                    cart,
+                                                    shippingInfo: shippingInfo  // 添加收货信息
+                                                })
                                             });
                                             const result = await captureResponse.json();
                                             
@@ -2091,9 +2239,21 @@ const CheckoutView: React.FC<{
             
             // 初始化 CardFields（信用卡支付）
             if (paypal.CardFields) {
+                // 存储验证后的实际值
+                let validatedShippingInfo: typeof shippingInfo | null = null;
+                
                 const cardField = paypal.CardFields({
                     createOrder: async () => {
-                        const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                        // 验证表单
+                        const validation = validateAllFields();
+                        if (!validation.isValid) {
+                            throw new Error('表单验证失败');
+                        }
+                        // 保存验证后的值
+                        validatedShippingInfo = validation.values;
+                        console.log('💾 [信用卡] 保存验证后的收货信息:', validatedShippingInfo);
+                        
+                        const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ cart, currency: 'USD' })
@@ -2102,17 +2262,60 @@ const CheckoutView: React.FC<{
                         return orderID;
                     },
                     onApprove: async (data: any) => {
-                        const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ orderID: data.orderID })
-                        });
-                        const result = await response.json();
-                        if (result.success) {
-                            window.location.href = `#/checkout-success?method=card&orderID=${data.orderID}`;
+                        console.log('💳 Card payment approved:', data);
+                        console.log('📦 [信用卡] 使用验证后的收货信息:', validatedShippingInfo);
+                        try {
+                            const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ 
+                                    orderID: data.orderID, 
+                                    cart: cart,
+                                    shippingInfo: validatedShippingInfo || shippingInfo  // 使用验证后的值
+                                })
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+                            
+                            const result = await response.json();
+                            console.log('💰 Capture result:', result);
+                            
+                            if (result.success) {
+                                console.log('✅ 支付成功！');
+                                alert(`✅ 支付成功！
+
+订单号: ${data.orderID}
+支付状态: ${result.status}
+
+感谢您的购买！`);
+                                window.location.href = '#/shop';
+                            } else {
+                                console.error('❌ Capture failed:', result);
+                                alert(`支付失败: ${result.error || '未知错误'}`);
+                            }
+                        } catch (error: any) {
+                            console.error('❌ Capture error:', error);
+                            if (error.message && error.message.includes('timeout')) {
+                                console.log('⚠️ 请求超时，但支付可能已成功');
+                                alert(`✅ 支付已提交！
+
+订单号: ${data.orderID}
+
+请稍后检查支付状态。`);
+                                window.location.href = '#/shop';
+                            } else {
+                                alert(`支付失败: ${error.message || '请联系客服'}`);
+                            }
                         }
                     },
                     onError: (err: any) => {
+                        // 如果已经跳转到成功页面，忽略错误
+                        if (window.location.hash.includes('checkout-success')) {
+                            console.log('⚠️ 忽略错误（已成功跳转）:', err);
+                            return;
+                        }
                         console.error('Card Error:', err);
                         alert('支付过程中出现错误，请检查卡片信息');
                     }
@@ -2213,6 +2416,174 @@ const CheckoutView: React.FC<{
         document.body.appendChild(script);
     }, []);
 
+    // 🆕 监听paymentMethod变化，重新渲染CardFields
+    useEffect(() => {
+        if (paymentMethod !== 'CARD') return;
+        
+        const paypal = (window as any).paypal;
+        if (!paypal || !paypal.CardFields) return;
+        
+        // 检查DOM元素是否存在
+        const numberEl = document.getElementById('card-number-field');
+        const expiryEl = document.getElementById('card-expiry-field');
+        const cvvEl = document.getElementById('card-cvv-field');
+        const nameEl = document.getElementById('card-name-field');
+        
+        if (!numberEl || !expiryEl || !cvvEl || !nameEl) {
+            console.log('⚠️ CardFields DOM元素尚未就绪');
+            return;
+        }
+        
+        // 检查是否已经渲染
+        if (numberEl.innerHTML !== '' && (window as any).paypalCardField) {
+            console.log('✅ CardFields已存在，无需重新渲染');
+            return;
+        }
+        
+        console.log('🔄 重新渲染CardFields...');
+        
+        // 清空旧内容
+        numberEl.innerHTML = '';
+        expiryEl.innerHTML = '';
+        cvvEl.innerHTML = '';
+        nameEl.innerHTML = '';
+        
+        // 使用存储的CardField实例或创建新实例
+        let cardFieldInstance = (window as any).paypalCardFieldInstance;
+        
+        if (!cardFieldInstance) {
+            // 存储验证后的实际值
+            let validatedShippingInfo: typeof shippingInfo | null = null;
+            
+            cardFieldInstance = paypal.CardFields({
+                createOrder: async () => {
+                    // 验证表单
+                    const validation = validateAllFields();
+                    if (!validation.isValid) {
+                        throw new Error('表单验证失败');
+                    }
+                    // 保存验证后的值
+                    validatedShippingInfo = validation.values;
+                    console.log('💾 [信用卡-重渲染] 保存验证后的收货信息:', validatedShippingInfo);
+                    
+                    const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cart, currency: 'USD' })
+                    });
+                    const { orderID } = await response.json();
+                    return orderID;
+                },
+                onApprove: async (data: any) => {
+                    console.log('💳 Card payment approved:', data);
+                    console.log('📦 [信用卡-重渲染] 使用验证后的收货信息:', validatedShippingInfo);
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                orderID: data.orderID, 
+                                cart: cart,
+                                shippingInfo: validatedShippingInfo || shippingInfo  // 使用验证后的值
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const result = await response.json();
+                        console.log('💰 Capture result:', result);
+                        
+                        if (result.success) {
+                            console.log('✅ 支付成功！');
+                            alert(`✅ 支付成功！
+
+订单号: ${data.orderID}
+支付状态: ${result.status}
+
+感谢您的购买！`);
+                            window.location.href = '#/shop';
+                        } else {
+                            console.error('❌ Capture failed:', result);
+                            alert(`支付失败: ${result.error || '未知错误'}`);
+                        }
+                    } catch (error: any) {
+                        console.error('❌ Capture error:', error);
+                        // 支付已成功但前端超时，直接跳转
+                        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                            console.log('⚠️ 请求超时，但支付可能已成功');
+                            alert(`✅ 支付已提交！
+
+订单号: ${data.orderID}
+
+请稍后检查支付状态。`);
+                            window.location.href = '#/shop';
+                        } else {
+                            alert(`支付失败: ${error.message || '请联系客服'}`);
+                        }
+                    }
+                },
+                onError: (err: any) => {
+                    // 如果已经跳转到成功页面，忽略错误
+                    if (window.location.hash.includes('checkout-success')) {
+                        console.log('⚠️ 忽略错误（已成功跳转）:', err);
+                        return;
+                    }
+                    console.error('Card Error:', err);
+                    alert('支付过程中出现错误，请检查卡片信息');
+                }
+            });
+            
+            if (!cardFieldInstance.isEligible()) {
+                console.error('CardFields not eligible');
+                return;
+            }
+            
+            (window as any).paypalCardFieldInstance = cardFieldInstance;
+        }
+        
+        // 渲染各个字段
+        try {
+            cardFieldInstance.NumberField({
+                style: {
+                    input: { 'font-size': '16px', 'color': '#000000', 'font-family': 'inherit' },
+                    '::placeholder': { 'color': '#999999' }
+                },
+                placeholder: 'Card number'
+            }).render('#card-number-field');
+            
+            cardFieldInstance.ExpiryField({
+                style: {
+                    input: { 'font-size': '16px', 'color': '#000000', 'font-family': 'inherit' },
+                    '::placeholder': { 'color': '#999999' }
+                },
+                placeholder: 'MM/YY'
+            }).render('#card-expiry-field');
+            
+            cardFieldInstance.CVVField({
+                style: {
+                    input: { 'font-size': '16px', 'color': '#000000', 'font-family': 'inherit' },
+                    '::placeholder': { 'color': '#999999' }
+                },
+                placeholder: 'CVV'
+            }).render('#card-cvv-field');
+            
+            cardFieldInstance.NameField({
+                style: {
+                    input: { 'font-size': '16px', 'color': '#000000', 'font-family': 'inherit' },
+                    '::placeholder': { 'color': '#999999' }
+                },
+                placeholder: 'Name on card'
+            }).render('#card-name-field');
+            
+            (window as any).paypalCardField = cardFieldInstance;
+            console.log('✅ CardFields重新渲染成功');
+        } catch (error) {
+            console.error('❌ CardFields渲染失败:', error);
+        }
+    }, [paymentMethod, cart]);
+
     // 监听组件挂载，重新渲染PayPal按钮（当SDK已加载但按钮未渲染时）
     useEffect(() => {
         const paypal = (window as any).paypal;
@@ -2238,7 +2609,7 @@ const CheckoutView: React.FC<{
                 },
                 fundingSource: paypal.FUNDING.PAYPAL,
                 createOrder: async () => {
-                    const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                    const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ cart: displayCart, currency: 'USD' })
@@ -2247,10 +2618,14 @@ const CheckoutView: React.FC<{
                     return orderID;
                 },
                 onApprove: async (data: any) => {
-                    const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                    const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderID: data.orderID })
+                        body: JSON.stringify({ 
+                            orderID: data.orderID, 
+                            cart: displayCart,
+                            shippingInfo: shippingInfo  // 添加收货信息
+                        })
                     });
                     const result = await response.json();
                     if (result.success) {
@@ -2282,7 +2657,7 @@ const CheckoutView: React.FC<{
                 },
                 fundingSource: paypal.FUNDING.PAYPAL,
                 createOrder: async () => {
-                    const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+                    const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ cart: displayCart, currency: 'USD' })
@@ -2291,10 +2666,14 @@ const CheckoutView: React.FC<{
                     return orderID;
                 },
                 onApprove: async (data: any) => {
-                    const response = await fetch('http://localhost:3001/api/capture-paypal-order', {
+                    const response = await fetch(`${API_BASE_URL}/api/capture-paypal-order`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderID: data.orderID })
+                        body: JSON.stringify({ 
+                            orderID: data.orderID, 
+                            cart: displayCart,
+                            shippingInfo: shippingInfo  // 添加收货信息
+                        })
                     });
                     const result = await response.json();
                     if (result.success) {
@@ -2433,7 +2812,7 @@ const CheckoutView: React.FC<{
                         </h2>
                         <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
                             {/* 左侧：PayPal 按钮 */}
-                            <div className="relative min-h-[44px] sm:min-h-[48px]">
+                            <div className="relative min-h-[44px] sm:min-h-[48px] z-10 [&_iframe]:!z-10">
                                 {isPayPalLoading && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-[#FFC439] rounded">
                                         <Loader2 className="animate-spin text-[#003087]" size={24} />
@@ -2442,7 +2821,7 @@ const CheckoutView: React.FC<{
                                 <div id="paypal-button-container" className="min-h-[44px] sm:min-h-[48px]"></div>
                             </div>
                             {/* 右侧：Google Pay 按钮（APM 集成） */}
-                            <div className="relative min-h-[44px] sm:min-h-[48px]">
+                            <div className="relative min-h-[44px] sm:min-h-[48px] z-10 [&_iframe]:!z-10">
                                 {isGooglePayLoading && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-black border border-white/20 rounded">
                                         <Loader2 className="animate-spin text-white" size={24} />
@@ -2471,8 +2850,25 @@ const CheckoutView: React.FC<{
                         <input 
                             type="email" 
                             placeholder="Email" 
-                            className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                            value={shippingInfo.email}
+                            onChange={(e) => {
+                                setShippingInfo({...shippingInfo, email: e.target.value});
+                                if (attempted || errors.email) {
+                                    const error = validateField('email', e.target.value);
+                                    setErrors({...errors, email: error});
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const error = validateField('email', e.target.value);
+                                setErrors({...errors, email: error});
+                            }}
+                            className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                errors.email ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                            }`}
                         />
+                        {errors.email && (
+                            <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.email}</p>
+                        )}
                     </div>
 
                     {/* Delivery */}
@@ -2484,30 +2880,286 @@ const CheckoutView: React.FC<{
                             </span>
                         </h2>
                         <div className="space-y-3 md:space-y-4">
-                            <select className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base">
-                                <option className="bg-black">United States</option>
-                                <option className="bg-black">Canada</option>
-                                <option className="bg-black">United Kingdom</option>
+                            <select 
+                                value={shippingInfo.country}
+                                onChange={(e) => setShippingInfo({...shippingInfo, country: e.target.value})}
+                                className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base"
+                            >
+                                <option className="bg-black" value="United States">United States</option>
+                                <option className="bg-black" value="Canada">Canada</option>
+                                <option className="bg-black" value="United Kingdom">United Kingdom</option>
+                                <option className="bg-black" value="Australia">Australia</option>
+                                <option className="bg-black" value="Germany">Germany</option>
+                                <option className="bg-black" value="France">France</option>
+                                <option className="bg-black" value="Italy">Italy</option>
+                                <option className="bg-black" value="Spain">Spain</option>
+                                <option className="bg-black" value="Netherlands">Netherlands</option>
+                                <option className="bg-black" value="Belgium">Belgium</option>
+                                <option className="bg-black" value="Switzerland">Switzerland</option>
+                                <option className="bg-black" value="Austria">Austria</option>
+                                <option className="bg-black" value="Sweden">Sweden</option>
+                                <option className="bg-black" value="Norway">Norway</option>
+                                <option className="bg-black" value="Denmark">Denmark</option>
+                                <option className="bg-black" value="Finland">Finland</option>
+                                <option className="bg-black" value="Poland">Poland</option>
+                                <option className="bg-black" value="Czech Republic">Czech Republic</option>
+                                <option className="bg-black" value="Ireland">Ireland</option>
+                                <option className="bg-black" value="Portugal">Portugal</option>
+                                <option className="bg-black" value="Greece">Greece</option>
+                                <option className="bg-black" value="Hungary">Hungary</option>
+                                <option className="bg-black" value="Romania">Romania</option>
+                                <option className="bg-black" value="Bulgaria">Bulgaria</option>
+                                <option className="bg-black" value="Slovakia">Slovakia</option>
+                                <option className="bg-black" value="Croatia">Croatia</option>
+                                <option className="bg-black" value="Slovenia">Slovenia</option>
+                                <option className="bg-black" value="Luxembourg">Luxembourg</option>
+                                <option className="bg-black" value="Iceland">Iceland</option>
+                                <option className="bg-black" value="Estonia">Estonia</option>
+                                <option className="bg-black" value="Latvia">Latvia</option>
+                                <option className="bg-black" value="Lithuania">Lithuania</option>
+                                <option className="bg-black" value="Japan">Japan</option>
+                                <option className="bg-black" value="South Korea">South Korea</option>
+                                <option className="bg-black" value="China">China</option>
+                                <option className="bg-black" value="Singapore">Singapore</option>
+                                <option className="bg-black" value="Hong Kong">Hong Kong</option>
+                                <option className="bg-black" value="Taiwan">Taiwan</option>
+                                <option className="bg-black" value="Macau">Macau</option>
+                                <option className="bg-black" value="India">India</option>
+                                <option className="bg-black" value="Thailand">Thailand</option>
+                                <option className="bg-black" value="Malaysia">Malaysia</option>
+                                <option className="bg-black" value="Indonesia">Indonesia</option>
+                                <option className="bg-black" value="Philippines">Philippines</option>
+                                <option className="bg-black" value="Vietnam">Vietnam</option>
+                                <option className="bg-black" value="Bangladesh">Bangladesh</option>
+                                <option className="bg-black" value="Pakistan">Pakistan</option>
+                                <option className="bg-black" value="Sri Lanka">Sri Lanka</option>
+                                <option className="bg-black" value="Myanmar">Myanmar</option>
+                                <option className="bg-black" value="Cambodia">Cambodia</option>
+                                <option className="bg-black" value="Laos">Laos</option>
+                                <option className="bg-black" value="Brunei">Brunei</option>
+                                <option className="bg-black" value="New Zealand">New Zealand</option>
+                                <option className="bg-black" value="Fiji">Fiji</option>
+                                <option className="bg-black" value="Mexico">Mexico</option>
+                                <option className="bg-black" value="Brazil">Brazil</option>
+                                <option className="bg-black" value="Argentina">Argentina</option>
+                                <option className="bg-black" value="Chile">Chile</option>
+                                <option className="bg-black" value="Colombia">Colombia</option>
+                                <option className="bg-black" value="Peru">Peru</option>
+                                <option className="bg-black" value="Venezuela">Venezuela</option>
+                                <option className="bg-black" value="Ecuador">Ecuador</option>
+                                <option className="bg-black" value="Uruguay">Uruguay</option>
+                                <option className="bg-black" value="Paraguay">Paraguay</option>
+                                <option className="bg-black" value="Bolivia">Bolivia</option>
+                                <option className="bg-black" value="Costa Rica">Costa Rica</option>
+                                <option className="bg-black" value="Panama">Panama</option>
+                                <option className="bg-black" value="Guatemala">Guatemala</option>
+                                <option className="bg-black" value="United Arab Emirates">United Arab Emirates</option>
+                                <option className="bg-black" value="Saudi Arabia">Saudi Arabia</option>
+                                <option className="bg-black" value="Israel">Israel</option>
+                                <option className="bg-black" value="Turkey">Turkey</option>
+                                <option className="bg-black" value="Egypt">Egypt</option>
+                                <option className="bg-black" value="Qatar">Qatar</option>
+                                <option className="bg-black" value="Kuwait">Kuwait</option>
+                                <option className="bg-black" value="Bahrain">Bahrain</option>
+                                <option className="bg-black" value="Oman">Oman</option>
+                                <option className="bg-black" value="Jordan">Jordan</option>
+                                <option className="bg-black" value="Lebanon">Lebanon</option>
+                                <option className="bg-black" value="Morocco">Morocco</option>
+                                <option className="bg-black" value="South Africa">South Africa</option>
+                                <option className="bg-black" value="Nigeria">Nigeria</option>
+                                <option className="bg-black" value="Kenya">Kenya</option>
+                                <option className="bg-black" value="Ghana">Ghana</option>
+                                <option className="bg-black" value="Ethiopia">Ethiopia</option>
+                                <option className="bg-black" value="Russia">Russia</option>
+                                <option className="bg-black" value="Ukraine">Ukraine</option>
+                                <option className="bg-black" value="Belarus">Belarus</option>
+                                <option className="bg-black" value="Kazakhstan">Kazakhstan</option>
+                                <option className="bg-black" value="Uzbekistan">Uzbekistan</option>
                             </select>
                             
                             <div className="grid grid-cols-2 gap-3 md:gap-4">
-                                <input type="text" placeholder="First name" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
-                                <input type="text" placeholder="Last name" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                                <div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="First name" 
+                                        value={shippingInfo.firstName}
+                                        onChange={(e) => {
+                                            setShippingInfo({...shippingInfo, firstName: e.target.value});
+                                            if (attempted || errors.firstName) {
+                                                const error = validateField('firstName', e.target.value);
+                                                setErrors({...errors, firstName: error});
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const error = validateField('firstName', e.target.value);
+                                            setErrors({...errors, firstName: error});
+                                        }}
+                                        className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                            errors.firstName ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                        }`}
+                                    />
+                                    {errors.firstName && (
+                                        <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.firstName}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Last name" 
+                                        value={shippingInfo.lastName}
+                                        onChange={(e) => {
+                                            setShippingInfo({...shippingInfo, lastName: e.target.value});
+                                            if (attempted || errors.lastName) {
+                                                const error = validateField('lastName', e.target.value);
+                                                setErrors({...errors, lastName: error});
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const error = validateField('lastName', e.target.value);
+                                            setErrors({...errors, lastName: error});
+                                        }}
+                                        className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                            errors.lastName ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                        }`}
+                                    />
+                                    {errors.lastName && (
+                                        <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.lastName}</p>
+                                    )}
+                                </div>
                             </div>
                             
-                            <input type="text" placeholder="Address" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            <div>
+                                <input 
+                                    type="text" 
+                                    placeholder="Address" 
+                                    value={shippingInfo.address}
+                                    onChange={(e) => {
+                                        setShippingInfo({...shippingInfo, address: e.target.value});
+                                        if (attempted || errors.address) {
+                                            const error = validateField('address', e.target.value);
+                                            setErrors({...errors, address: error});
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        const error = validateField('address', e.target.value);
+                                        setErrors({...errors, address: error});
+                                    }}
+                                    className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                        errors.address ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                    }`}
+                                />
+                                {errors.address && (
+                                    <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.address}</p>
+                                )}
+                            </div>
                             
-                            <input type="text" placeholder="Apartment, suite, etc. (optional)" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            <input 
+                                type="text" 
+                                placeholder="Apartment, suite, etc. (optional)" 
+                                value={shippingInfo.apartment}
+                                onChange={(e) => setShippingInfo({...shippingInfo, apartment: e.target.value})}
+                                className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" 
+                            />
                             
                             <div className="grid grid-cols-3 gap-3 md:gap-4">
-                                <input type="text" placeholder="City" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
-                                <select className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base">
-                                    <option value="" className="bg-black">State</option>
-                                </select>
-                                <input type="text" placeholder="ZIP code" className="bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                                <div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="City" 
+                                        value={shippingInfo.city}
+                                        onChange={(e) => {
+                                            setShippingInfo({...shippingInfo, city: e.target.value});
+                                            if (attempted || errors.city) {
+                                                const error = validateField('city', e.target.value);
+                                                setErrors({...errors, city: error});
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const error = validateField('city', e.target.value);
+                                            setErrors({...errors, city: error});
+                                        }}
+                                        className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                            errors.city ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                        }`}
+                                    />
+                                    {errors.city && (
+                                        <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.city}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <input 
+                                        type="text" 
+                                        placeholder={shippingInfo.country === 'China' ? '省份/直辖市' : shippingInfo.country === 'United States' ? 'State' : 'Province/State'}
+                                        value={shippingInfo.state}
+                                        onChange={(e) => {
+                                            setShippingInfo({...shippingInfo, state: e.target.value});
+                                            if (attempted || errors.state) {
+                                                const error = validateField('state', e.target.value);
+                                                setErrors({...errors, state: error});
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const error = validateField('state', e.target.value);
+                                            setErrors({...errors, state: error});
+                                        }}
+                                        className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                            errors.state ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                        }`}
+                                    />
+                                    {errors.state && (
+                                        <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.state}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="ZIP code" 
+                                        value={shippingInfo.zipCode}
+                                        onChange={(e) => {
+                                            setShippingInfo({...shippingInfo, zipCode: e.target.value});
+                                            if (attempted || errors.zipCode) {
+                                                const error = validateField('zipCode', e.target.value);
+                                                setErrors({...errors, zipCode: error});
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            const error = validateField('zipCode', e.target.value);
+                                            setErrors({...errors, zipCode: error});
+                                        }}
+                                        className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                            errors.zipCode ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                        }`}
+                                    />
+                                    {errors.zipCode && (
+                                        <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.zipCode}</p>
+                                    )}
+                                </div>
                             </div>
                             
-                            <input type="tel" placeholder="Phone" className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base" />
+                            <div>
+                                <input 
+                                    type="tel" 
+                                    placeholder="Phone" 
+                                    value={shippingInfo.phone}
+                                    onChange={(e) => {
+                                        setShippingInfo({...shippingInfo, phone: e.target.value});
+                                        if (attempted || errors.phone) {
+                                            const error = validateField('phone', e.target.value);
+                                            setErrors({...errors, phone: error});
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        const error = validateField('phone', e.target.value);
+                                        setErrors({...errors, phone: error});
+                                    }}
+                                    className={`w-full bg-white/5 border rounded-lg px-4 py-3 md:py-3.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-white/10 outline-none transition-all text-sm md:text-base ${
+                                        errors.phone ? 'border-red-500 focus:border-red-500' : 'border-white/20 focus:border-white/40'
+                                    }`}
+                                />
+                                {errors.phone && (
+                                    <p className="mt-1.5 text-xs md:text-sm text-red-500">{errors.phone}</p>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -2678,18 +3330,39 @@ const CheckoutView: React.FC<{
                         {paymentMethod !== 'PAYPAL' && (
                             <button
                                 onClick={async () => {
+                                    // 首次点击时标记已尝试提交
+                                    setAttempted(true);
+                                    
+                                    // 验证所有字段
+                                    const validation = validateAllFields();
+                                    if (!validation.isValid) {
+                                        return;
+                                    }
+                                    
                                     if (paymentMethod === 'CARD') {
                                         // 使用 PayPal CardFields 提交
                                         const cardField = (window as any).paypalCardField;
-                                        if (cardField) {
-                                            try {
-                                                await cardField.submit();
-                                            } catch (error) {
-                                                console.error('Card submission error:', error);
-                                                alert('请填写完整的卡片信息');
-                                            }
-                                        } else {
+                                        console.log('💳 CardField instance:', cardField);
+                                        
+                                        if (!cardField) {
+                                            console.error('❌ CardField instance not found');
                                             alert('信用卡支付组件未加载，请刷新页面');
+                                            return;
+                                        }
+                                        
+                                        try {
+                                            console.log('🚀 开始提交卡片支付...');
+                                            const result = await cardField.submit();
+                                            console.log('✅ 提交成功:', result);
+                                        } catch (error: any) {
+                                            console.error('❌ Card submission error:', error);
+                                            console.error('❌ Error details:', {
+                                                message: error.message,
+                                                details: error.details,
+                                                stack: error.stack
+                                            });
+                                            
+                                            // 静默失败，不弹窗，错误信息已经通过表单的红色边框和提示文字显示
                                         }
                                     } else {
                                         // 其他支付方式
@@ -2697,7 +3370,7 @@ const CheckoutView: React.FC<{
                                     }
                                 }}
                                 disabled={isProcessing}
-                                className="relative w-full bg-gradient-to-r from-neon-cyan to-neon-pink hover:shadow-[0_0_20px_rgba(0,255,255,0.5)] disabled:bg-gray-600 disabled:from-gray-600 disabled:to-gray-600 text-black font-bold py-3 md:py-4 px-6 rounded-lg transition-all text-lg md:text-xl lg:text-2xl flex items-center justify-center gap-2 md:gap-3 group overflow-hidden"
+                                className="relative w-full bg-gradient-to-r from-neon-cyan to-neon-pink hover:shadow-[0_0_20px_rgba(0,255,255,0.5)] disabled:bg-gray-600 disabled:from-gray-600 disabled:to-gray-600 text-black font-bold py-3 md:py-4 px-6 rounded-lg transition-all text-lg md:text-xl lg:text-2xl flex items-center justify-center gap-2 md:gap-3 group overflow-hidden disabled:cursor-not-allowed"
                             >
                                 <span className="absolute inset-0 bg-gradient-to-r from-neon-pink to-neon-cyan opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
                                 <span className="relative z-10">
@@ -2787,20 +3460,6 @@ const CheckoutView: React.FC<{
                                     </div>
                                 </div>
                             ))}
-                        </div>
-
-                        {/* Discount Code */}
-                        <div className="mb-4 md:mb-6">
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="Discount code" 
-                                    className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 md:px-4 py-2 md:py-3 text-white placeholder-gray-500 focus:border-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all text-xs md:text-sm"
-                                />
-                                <button className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-4 md:px-6 py-2 md:py-3 rounded-lg transition-colors text-xs md:text-sm whitespace-nowrap">
-                                    Apply
-                                </button>
-                            </div>
                         </div>
 
                         {/* Totals */}
@@ -3180,7 +3839,11 @@ const ProductDetailView: React.FC<{
                                 <Play size={24} fill="currentColor" />
                             </div>
                         ) : (
-                            <img src={item.src} className="w-full h-full object-cover" alt="thumbnail" />
+                            <img 
+                                src={item.src} 
+                                className="w-full h-full object-cover" 
+                                alt="thumbnail"
+                            />
                         )}
                         {item.type === 'video' && <div className="absolute bottom-1 right-1 bg-black/80 text-white p-0.5 rounded-full"><Film size={10}/></div>}
                     </div>
@@ -3801,6 +4464,7 @@ const App: React.FC = () => {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);  // 后台管理状态
+  const [showAdminLogin, setShowAdminLogin] = useState(false);  // 登录弹窗状态
   const [language, setLanguage] = useState('EN');  // 语言状态
   const [currency, setCurrency] = useState('USD');  // 货币状态
   const [config, setConfig] = useState<StoreConfig>({  // 商店配置
@@ -3917,26 +4581,48 @@ const App: React.FC = () => {
   }, [products, selectedProduct?.id]);
 
   useEffect(() => {
-    // 优先从 localStorage 加载产品数据
-    const storedProducts = localStorage.getItem('CR_CATALOG_DATA');
-    if (storedProducts) {
+    // 从Supabase加载商品数据
+    const loadProducts = async () => {
       try {
-        const parsedProducts = JSON.parse(storedProducts);
-        setProducts(parsedProducts);
-        setOriginalProducts(parsedProducts); // 保存原始数据
-      } catch (e) {
-        console.error('Failed to parse stored products', e);
-        fetchProducts().then(prods => {
-          setProducts(prods);
-          setOriginalProducts(prods);
-        });
+        console.log('📦 Loading products from Supabase...');
+        const supabaseProducts = await productsAPI.getAll();
+        
+        if (supabaseProducts && supabaseProducts.length > 0) {
+          console.log(`✅ Loaded ${supabaseProducts.length} products from Supabase`);
+          setProducts(supabaseProducts);
+          setOriginalProducts(supabaseProducts);
+        } else {
+          // Supabase为空，尝试localStorage备份
+          const storedProducts = localStorage.getItem('CR_CATALOG_DATA');
+          if (storedProducts) {
+            try {
+              const parsedProducts = JSON.parse(storedProducts);
+              console.log('💾 Loading from localStorage backup');
+              setProducts(parsedProducts);
+              setOriginalProducts(parsedProducts);
+            } catch (e) {
+              console.error('Failed to parse stored products', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Supabase loading failed:', error);
+        // 失败后尝试localStorage
+        const storedProducts = localStorage.getItem('CR_CATALOG_DATA');
+        if (storedProducts) {
+          try {
+            const parsedProducts = JSON.parse(storedProducts);
+            console.log('💾 Fallback to localStorage');
+            setProducts(parsedProducts);
+            setOriginalProducts(parsedProducts);
+          } catch (e) {
+            console.error('Failed to parse stored products', e);
+          }
+        }
       }
-    } else {
-      fetchProducts().then(prods => {
-        setProducts(prods);
-        setOriginalProducts(prods);
-      });
-    }
+    };
+    
+    loadProducts();
     
     // 加载商店配置
     const storedConfig = localStorage.getItem('CR_STORE_CONFIG');
@@ -3952,43 +4638,40 @@ const App: React.FC = () => {
     if (verified) setAgeVerified(true);
   }, []);
 
-  // 监听输入序列 "admin" 打开后台管理
+  // 检查管理员认证状态
   useEffect(() => {
-    let inputSequence = '';
-    let resetTimer: NodeJS.Timeout;
+    if (isAdminAuthenticated()) {
+      // 已登录，直接打开后台
+      setIsAdminOpen(true);
+    }
+  }, []);
 
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // 只记录字母和数字键
-      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
-        inputSequence += e.key.toLowerCase();
-        
-        // 检查是否输入了 "admin"
-        if (inputSequence.includes('admin')) {
-          e.preventDefault();
-          setIsAdminOpen(true);
-          inputSequence = ''; // 重置序列
-        }
-        
-        // 限制序列长度，只保留最后10个字符
-        if (inputSequence.length > 10) {
-          inputSequence = inputSequence.slice(-10);
-        }
-        
-        // 清除之前的定时器
-        clearTimeout(resetTimer);
-        
-        // 2秒后重置输入序列
-        resetTimer = setTimeout(() => {
-          inputSequence = '';
-        }, 2000);
+  // 处理管理员登录成功
+  const handleAdminLoginSuccess = () => {
+    setAdminSession();
+    setShowAdminLogin(false);
+    setIsAdminOpen(true);
+  };
+
+  // 处理管理员登出
+  const handleAdminLogout = () => {
+    clearAdminSession();
+    setIsAdminOpen(false);
+    showToast('已安全退出管理后台');
+  };
+
+  // 触发管理员登录（可以通过特殊URL参数访问）
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('admin') === 'true') {
+      if (!isAdminAuthenticated()) {
+        setShowAdminLogin(true);
+      } else {
+        setIsAdminOpen(true);
       }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-      clearTimeout(resetTimer);
-    };
+      // 清除URL参数
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const handleVerifyAge = () => {
@@ -3996,14 +4679,15 @@ const App: React.FC = () => {
     setAgeVerified(true);
   };
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product | CartItem) => {
     setCart(prev => {
       // 对于组合商品，查找同一bundleId的存在条目
-      if (product.isBundleItem && product.bundleId) {
-        const existing = prev.find(p => p.id === product.id && p.bundleId === product.bundleId);
+      const cartProduct = product as CartItem;
+      if (cartProduct.isBundleItem && cartProduct.bundleId) {
+        const existing = prev.find(p => p.id === product.id && p.bundleId === cartProduct.bundleId);
         if (existing) {
           // 组合商品已存在，增加数量（保持组合价）
-          return prev.map(p => (p.id === product.id && p.bundleId === product.bundleId) ? { ...p, quantity: p.quantity + 1 } : p);
+          return prev.map(p => (p.id === product.id && p.bundleId === cartProduct.bundleId) ? { ...p, quantity: p.quantity + 1 } : p);
         }
       } else {
         // 普通商品，查找不带bundleId的存在条目
@@ -4257,6 +4941,14 @@ const App: React.FC = () => {
         </main>
 
         {view !== 'CHECKOUT' && <Footer onNavigate={(v) => { setView(v); window.scrollTo(0,0); }} />}
+        
+        {/* 管理员登录弹窗 */}
+        {showAdminLogin && (
+          <AdminLogin 
+            onLoginSuccess={handleAdminLoginSuccess}
+            onCancel={() => setShowAdminLogin(false)}
+          />
+        )}
     </div>
   );
 };

@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Server environment
+server/.env
+server/.env.local
+
 # SSL certificates (local development only)
 certs/
 *.pem
@@ -28,3 +38,5 @@ certs/
 *.njsproj
 *.sln
 *.sw?
+
+.vercel

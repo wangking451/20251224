@@ -1,12 +1,15 @@
-﻿import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, Package, Palette, Settings, Upload, Plus, Trash2, Save, 
   Image as ImageIcon, X, ChevronRight, LogOut, Download, AlertTriangle, CheckCircle,
   Search, Video, Layers, List, Tag, Edit3, FileSpreadsheet, RefreshCw, FileText, Globe,
-  Shield, Info, Image, CreditCard, AlertCircle
+  Shield, Info, Image, CreditCard, AlertCircle, ShoppingBag, Truck, Eye, DollarSign
 } from 'lucide-react';
-import { Product, StoreConfig, HeroSlide, CustomPage, BundleOffer } from '../types';
+import { Product, StoreConfig, HeroSlide, CustomPage, BundleOffer, Order } from '../types';
 import { parseCSVData } from '../services/csvLoader';
+import CSVImporter from './CSVImporter';
+import OrdersManager from './OrdersManager';
+import { productsAPI, ordersAPI } from '../services/supabase';
 
 interface AdminDashboardProps {
   products: Product[];
@@ -21,7 +24,7 @@ const processImageFile = (file: File): Promise<string> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
+      const img = document.createElement('img') as HTMLImageElement;
       img.src = e.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -53,13 +56,35 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
 );
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config, onUpdateProducts, onUpdateConfig, onExit }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRODUCTS' | 'DESIGN' | 'PAGES' | 'BUNDLES' | 'SETTINGS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRODUCTS' | 'DESIGN' | 'PAGES' | 'BUNDLES' | 'ORDERS' | 'SETTINGS'>('OVERVIEW');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingPage, setEditingPage] = useState<CustomPage | null>(null);
   const [editingBundle, setEditingBundle] = useState<BundleOffer | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
+  const [showCSVImporter, setShowCSVImporter] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+
+  // 加载订单数据
+  useEffect(() => {
+    if (activeTab === 'ORDERS') {
+      loadOrders();
+    }
+  }, [activeTab]);
+
+  const loadOrders = async () => {
+    try {
+      const data = await ordersAPI.getAll();
+      setOrders(data);
+    } catch (error: any) {
+      console.error('Load orders error:', error);
+      setImportStatus({ msg: `加载订单失败: ${error.message}`, type: 'error' });
+    }
+  };
 
   // --- Handlers ---
   const handleImageUpload = async (file: File, callback: (base64: string) => void) => {
@@ -74,13 +99,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
     }
   };
 
-  const handleProductSave = (p: Product) => {
-    if (products.find(existing => existing.id === p.id)) {
-      onUpdateProducts(products.map(ex => ex.id === p.id ? p : ex));
-    } else {
-      onUpdateProducts([...products, p]);
+  const handleProductSave = async (p: Product) => {
+    try {
+      if (products.find(existing => existing.id === p.id)) {
+        await productsAPI.update(p.id, p);
+        onUpdateProducts(products.map(ex => ex.id === p.id ? p : ex));
+        setImportStatus({ msg: '商品更新成功', type: 'success' });
+      } else {
+        await productsAPI.create(p);
+        onUpdateProducts([...products, p]);
+        setImportStatus({ msg: '商品创建成功', type: 'success' });
+      }
+      setEditingProduct(null);
+    } catch (error: any) {
+      console.error('Save product error:', error);
+      setImportStatus({ msg: `保存失败: ${error.message}`, type: 'error' });
     }
-    setEditingProduct(null);
   };
 
   const handlePageSave = (page: CustomPage) => {
@@ -114,6 +148,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
       onUpdateConfig({...config, bundleOffers: [...currentBundles, bundle]});
     }
     setEditingBundle(null);
+  };
+
+  // CSV 导入处理：使用 CSVImporter 组件 + Supabase持久化
+  const handleCSVImport = async (parsedProducts: Product[]) => {
+    if (parsedProducts.length === 0) {
+      setImportStatus({ msg: '解析失败：未找到有效商品。请检查 CSV 是否包含 "Handle" 列。', type: 'error' });
+      return;
+    }
+
+    const confirmMsg = `解析成功！共找到 ${parsedProducts.length} 个商品。\n\n点击 [确定] 覆盖现有库存。\n点击 [取消] 追加到现有库存。`;
+    
+    try {
+      if (window.confirm(confirmMsg)) {
+        // 覆盖模式：先删除所有旧数据
+        setImportStatus({ msg: '正在删除旧数据...', type: 'info' });
+        if (products.length > 0) {
+          await productsAPI.bulkDelete(products.map(p => p.id));
+        }
+        
+        // 批量创建新商品
+        setImportStatus({ msg: `正在上传 ${parsedProducts.length} 个商品...`, type: 'info' });
+        for (const product of parsedProducts) {
+          await productsAPI.create(product);
+        }
+        
+        onUpdateProducts(parsedProducts);
+        setImportStatus({ msg: `成功覆盖导入 ${parsedProducts.length} 个商品。`, type: 'success' });
+      } else {
+        // 追加模式
+        setImportStatus({ msg: `正在追加 ${parsedProducts.length} 个商品...`, type: 'info' });
+        const currentMap = new Map(products.map(p => [p.id, p]));
+        
+        for (const product of parsedProducts) {
+          if (currentMap.has(product.id)) {
+            // 更新现有
+            await productsAPI.update(product.id, product);
+          } else {
+            // 创建新的
+            await productsAPI.create(product);
+          }
+          currentMap.set(product.id, product);
+        }
+        
+        onUpdateProducts(Array.from(currentMap.values()));
+        setImportStatus({ msg: `成功追加导入。当前总库存: ${currentMap.size}。`, type: 'success' });
+      }
+    } catch (error: any) {
+      console.error('CSV import error:', error);
+      setImportStatus({ msg: `导入失败: ${error.message}`, type: 'error' });
+    }
+    
+    setShowCSVImporter(false);
   };
 
   // CSV 上传处理函数
@@ -505,7 +591,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                       <div>
                         <label className="block text-xs text-neon-cyan font-bold mb-1">库存状态</label>
                         <select className="w-full bg-black border border-white/20 p-3 text-white focus:border-neon-pink outline-none"
-                                value={editingProduct.stockStatus} onChange={e => setEditingProduct({...editingProduct, stockStatus: e.target.value as any})}>
+                                value={editingProduct.stock_status} onChange={e => setEditingProduct({...editingProduct, stock_status: e.target.value as any})}>
                            <option value="IN_STOCK">有货 (In Stock)</option>
                            <option value="LOW_STOCK">库存紧张 (Low Stock)</option>
                            <option value="OUT_OF_STOCK">售罄 (Out of Stock)</option>
@@ -656,6 +742,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
           <nav className="flex-1 py-6 space-y-1">
              <TabButton active={activeTab === 'OVERVIEW'} onClick={() => setActiveTab('OVERVIEW')} icon={<LayoutDashboard size={18}/>} label="概览 & 导入" />
              <TabButton active={activeTab === 'PRODUCTS'} onClick={() => setActiveTab('PRODUCTS')} icon={<Package size={18}/>} label="商品管理" />
+             <TabButton active={activeTab === 'ORDERS'} onClick={() => setActiveTab('ORDERS')} icon={<ShoppingBag size={18}/>} label="订单管理" />
              <TabButton active={activeTab === 'DESIGN'} onClick={() => setActiveTab('DESIGN')} icon={<Palette size={18}/>} label="店铺 & 首页" />
              <TabButton active={activeTab === 'PAGES'} onClick={() => setActiveTab('PAGES')} icon={<FileText size={18}/>} label="页面管理" />
              <TabButton active={activeTab === 'BUNDLES'} onClick={() => setActiveTab('BUNDLES')} icon={<Tag size={18}/>} label="商品组合" />
@@ -698,10 +785,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                     </p>
 
                     <div className="flex flex-col gap-4">
-                       <label className="flex items-center gap-3 bg-neon-purple hover:bg-neon-pink text-white px-6 py-4 font-bold cursor-pointer transition-colors clip-path-polygon rounded w-fit">
-                          <Upload size={18}/> 上传 Shopify CSV 文件
-                          <input type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
-                       </label>
+                       <button 
+                         onClick={() => setShowCSVImporter(true)}
+                         className="flex items-center gap-3 bg-neon-purple hover:bg-neon-pink text-white px-6 py-4 font-bold cursor-pointer transition-colors clip-path-polygon rounded w-fit"
+                       >
+                         <Upload size={18}/> 上传 Shopify CSV 文件
+                       </button>
                        
                        {importStatus && (
                            <div className={`flex items-center gap-2 text-sm p-4 rounded border ${
@@ -718,7 +807,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                     <div className="mt-8 pt-6 border-t border-white/10">
                        <h4 className="text-sm font-bold text-white mb-3">其他操作</h4>
                        <button onClick={() => setEditingProduct({
-                           id: `NEB-${Date.now()}`, sku: '', name: '新建商品草稿', price: 0, category: 'VIBES', images: [], description: '', features: [], specs: {material:'',size:'',noise:'',battery:''}, stockStatus:'IN_STOCK'
+                           id: `NEB-${Date.now()}`, sku: '', name: '新建商品草稿', price: 0, category: 'VIBES', images: [], description: '', features: [], specs: {material:'',size:'',noise:'',battery:''}, stock_status:'IN_STOCK'
                        })} className="flex items-center gap-2 text-gray-400 hover:text-white text-sm font-bold transition-colors">
                           <Plus size={16}/> 手动添加单个商品
                        </button>
@@ -744,18 +833,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                       </div>
                       
                       {/* CSV 导入按钮 */}
-                      <label className="bg-neon-purple hover:bg-neon-pink text-white px-4 py-2 font-bold text-sm cursor-pointer rounded flex items-center gap-2 transition-colors">
-                         <Upload size={16}/> 导入 CSV
-                         <input 
-                           type="file" 
-                           accept=".csv" 
-                           className="hidden" 
-                           onChange={handleCSVUpload}
-                         />
-                      </label>
+                      <button 
+                        onClick={() => setShowCSVImporter(true)}
+                        className="bg-neon-purple hover:bg-neon-pink text-white px-4 py-2 font-bold text-sm cursor-pointer rounded flex items-center gap-2 transition-colors"
+                      >
+                        <Upload size={16}/> 导入 CSV
+                      </button>
                       
                       <button onClick={() => setEditingProduct({
-                           id: `NEB-${Date.now()}`, sku: '', name: '新建商品', price: 0, category: 'VIBES', images: [], description: '', features: [], specs: {material:'',size:'',noise:'',battery:''}, stockStatus:'IN_STOCK'
+                           id: `NEB-${Date.now()}`, sku: '', name: '新建商品', price: 0, category: 'VIBES', images: [], description: '', features: [], specs: {material:'',size:'',noise:'',battery:''}, stock_status:'IN_STOCK'
                        })} className="bg-neon-cyan text-black px-4 py-2 font-bold text-sm hover:bg-white rounded">+ 新增商品</button>
                    </div>
                 </div>
@@ -811,8 +897,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                                <td className="p-4 text-sm text-gray-300">{p.category}</td>
                                <td className="p-4 text-neon-cyan font-mono">${p.price}</td>
                                <td className="p-4">
-                                  <span className={`text-[10px] font-bold px-2 py-1 border rounded ${p.stockStatus === 'IN_STOCK' ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}`}>
-                                     {p.stockStatus === 'IN_STOCK' ? '有货' : (p.stockStatus === 'LOW_STOCK' ? '库存紧张' : '售罄')}
+                                  <span className={`text-[10px] font-bold px-2 py-1 border rounded ${p.stock_status === 'IN_STOCK' ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}`}>
+                                     {p.stock_status === 'IN_STOCK' ? '有货' : (p.stock_status === 'LOW_STOCK' ? '库存紧张' : '售罄')}
                                   </span>
                                </td>
                                <td className="p-4 text-right">
@@ -830,6 +916,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                    )}
                 </div>
              </div>
+          )}
+
+          {activeTab === 'ORDERS' && (
+            <OrdersManager 
+              orders={orders} 
+              onOrdersUpdate={(newOrders) => setOrders(newOrders)}
+            />
           )}
 
           {activeTab === 'DESIGN' && (
@@ -1769,6 +1862,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
        <PageEditor />
        <BundleEditor />
        <ProductEditor />
+       
+       {/* CSV Importer */}
+       {showCSVImporter && (
+         <CSVImporter 
+           onImport={handleCSVImport}
+           onClear={() => {}} 
+           onClose={() => setShowCSVImporter(false)}
+         />
+       )}
     </div>
   );
 };

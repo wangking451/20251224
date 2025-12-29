@@ -6,7 +6,7 @@ export interface ProductVariant {
   option3?: string;
   price: number;
   image?: string;    // Variant-specific image
-  stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+  stock_status: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
 }
 
 export interface Product {
@@ -27,7 +27,7 @@ export interface Product {
     noise: string;
     battery: string;
   };
-  stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+  stock_status: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
   bundleOfferId?: string;  // 关联的组合商品ID
   
   // Variant support
@@ -38,6 +38,7 @@ export interface Product {
 }
 
 export interface CartItem extends Product {
+  cartItemId?: string;         // 购物车项唯一ID（用于区分同一产品的多个购物车项）
   quantity: number;
   bundleId?: string;           // 如果是组合商品，记录组合ID
   bundleDiscountPrice?: number; // 如果是组合商品，记录组合后的单价
@@ -87,6 +88,46 @@ export interface BundleOffer {
   bundlePrice: number;  // 组合优惠价
   discountPercent: number;  // 折扣百分比
   isActive: boolean;  // 是否启用
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 订单相关类型
+export interface OrderItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  sku: string;
+  price: number;
+  quantity: number;
+  subtotal: number;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;  // 订单号，如 ORD-20240101-001
+  customerEmail: string;
+  customerName?: string;
+  customerPhone?: string;
+  shippingAddress?: {
+    address: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  items: OrderItem[];
+  subtotal: number;  // 商品小计
+  shippingFee: number;  // 运费
+  tax: number;  // 税费
+  total: number;  // 总计
+  currency: string;  // 货币类型
+  paymentMethod: 'PAYPAL' | 'CARD' | 'OTHER';
+  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+  orderStatus: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  trackingNumber?: string;  // 物流单号
+  paypalOrderId?: string;  // PayPal订单ID
+  notes?: string;  // 订单备注
   createdAt: string;
   updatedAt: string;
 }

@@ -41,5 +41,5 @@ if ($openssl) {
 }
 
 Write-Host ""
-Write-Host "🚀 启动HTTPS开发服务器：" -ForegroundColor Green
-Write-Host '   npm run dev:https' -ForegroundColor White
+Write-Host "Start HTTPS dev server:" -ForegroundColor Green
+Write-Host '   Set VITE_HTTPS=true; npm run dev' -ForegroundColor White

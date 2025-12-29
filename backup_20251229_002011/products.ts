@@ -30,7 +30,7 @@ export const PRODUCTS: Product[] = [
     description: "Maximum overdrive. Military-grade haptic engine encased in bio-silicone. Syncs to the beat of your night.",
     features: ['Chameleon Skin', 'Bio-Haptic', 'Wireless', 'Silent'],
     specs: { material: 'Silicone/ABS', size: 'Medium', noise: '<25dB', battery: 'Li-Poly' },
-    stockStatus: 'IN_STOCK'
+    stock_status: 'IN_STOCK'
   },
   {
     id: '2',
@@ -49,7 +49,7 @@ export const PRODUCTS: Product[] = [
     description: "Laser-wire aesthetics. High tensile strength luminescent fibers that cut through the darkness.",
     features: ['Luminescent', 'High Tensile', 'UV Reactive', 'Non-Stretch'],
     specs: { material: 'Nylon/EL Wire', size: '10m', noise: 'N/A', battery: 'N/A' },
-    stockStatus: 'IN_STOCK'
+    stock_status: 'IN_STOCK'
   },
   {
     id: '3',
@@ -69,7 +69,7 @@ export const PRODUCTS: Product[] = [
     description: "Liquid chrome. A conductive fluid engineered for maximum neural interface sensitivity.",
     features: ['Conductive', 'Hybrid Base', 'pH Balanced', 'Cool/Warm'],
     specs: { material: 'Hybrid', size: '120ml', noise: 'N/A', battery: 'N/A' },
-    stockStatus: 'LOW_STOCK'
+    stock_status: 'LOW_STOCK'
   },
   {
     id: '4',
@@ -89,7 +89,7 @@ export const PRODUCTS: Product[] = [
     description: "Locked in orbit. Transparent PVC with embedded LED circuitry.",
     features: ['LED Embedded', 'Clear PVC', 'Rechargeable', 'Dimmer'],
     specs: { material: 'PVC/LED', size: 'Adjustable', noise: 'N/A', battery: '300mAh' },
-    stockStatus: 'OUT_OF_STOCK'
+    stock_status: 'OUT_OF_STOCK'
   },
   {
     id: '5',
@@ -109,7 +109,7 @@ export const PRODUCTS: Product[] = [
     description: "Augmented reality interface fashion accessory. Purely aesthetic, strictly strictly cool.",
     features: ['UV Protection', 'HUD Effect', 'Lightweight', 'Anti-Fog'],
     specs: { material: 'Polycarb', size: 'One Size', noise: 'N/A', battery: 'N/A' },
-    stockStatus: 'IN_STOCK'
+    stock_status: 'IN_STOCK'
   },
   {
     id: '6',
@@ -128,7 +128,7 @@ export const PRODUCTS: Product[] = [
     description: "Premium massage oil with warming agents activated by friction.",
     features: ['Warming', 'Scentless', 'Non-Staining', 'Vegan'],
     specs: { material: 'Oil Base', size: '200ml', noise: 'N/A', battery: 'N/A' },
-    stockStatus: 'IN_STOCK'
+    stock_status: 'IN_STOCK'
   }
 ];
 

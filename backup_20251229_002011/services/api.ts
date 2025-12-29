@@ -4,20 +4,22 @@ import { PRODUCTS as MOCK_PRODUCTS } from '../products';
 // =================================================================
 // 【配置指南 / CONFIGURATION】
 // 1. 部署前：保持为空，网站将运行在 "演示模式" (Mock Mode)。
-// 2. 对接时：填入你的 Shopify 域名和 Storefront Access Token。
+// 2. 对接时：在 .env.local 文件中设置环境变量
 // =================================================================
-const SHOPIFY_DOMAIN = ''; // 例如: 'nebula-cyber.myshopify.com'
-const SHOPIFY_ACCESS_TOKEN = ''; // 例如: 'dd4d4...' (Storefront API Token)
+const SHOPIFY_DOMAIN = import.meta.env.VITE_SHOPIFY_DOMAIN || ''; // 例如: 'nebula-cyber.myshopify.com'
+const SHOPIFY_ACCESS_TOKEN = import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN || ''; // 例如: 'dd4d4...' (Storefront API Token)
 const API_VERSION = '2024-01';
 
 // =================================================================
 // 【PayPal 配置 / PAYPAL CONFIGURATION】
-// 1. 访问 https://developer.paypal.com/
-// 2. 创建应用获取 Client ID
-// 3. 填入下方配置
+// 在 .env.local 文件中设置：
+// VITE_PAYPAL_CLIENT_ID=your_client_id
+// VITE_PAYPAL_MODE=sandbox
+// VITE_API_BASE_URL=http://localhost:3001
 // =================================================================
-const PAYPAL_CLIENT_ID = 'AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA'; // PayPal Client ID (测试环境使用 Sandbox Client ID)
-const PAYPAL_MODE = 'sandbox'; // 'sandbox' 测试环境 或 'production' 生产环境
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || ''; // PayPal Client ID
+const PAYPAL_MODE = (import.meta.env.VITE_PAYPAL_MODE as 'sandbox' | 'production') || 'sandbox'; // 'sandbox' 测试环境 或 'production' 生产环境
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'; // API 基础 URL
 
 /**
  * 核心请求函数：尝试连接 Shopify
@@ -181,7 +183,7 @@ export const createCheckoutSession = async (cart: CartItem[], paymentMethod: str
     
     try {
       // 调用后端API创建PayPal订单
-      const response = await fetch('http://localhost:3001/api/create-paypal-order', {
+      const response = await fetch(`${API_BASE_URL}/api/create-paypal-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

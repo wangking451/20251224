@@ -1,4 +1,8 @@
-import { Blob } from '@google/genai';
+// 自定义 Blob 类型（代替 @google/genai 的 Blob）
+interface Blob {
+  data: string;
+  mimeType: string;
+}
 
 export function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64);

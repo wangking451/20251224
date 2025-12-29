@@ -1,6 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { Upload, X, Loader2, FileText, AlertTriangle } from 'lucide-react';
+import { Upload, X, Loader2, FileText, AlertTriangle, Cloud } from 'lucide-react';
 import { Product } from '../types';
+import { sanitizeInput } from '../utils/auth';
+
+// Cloudinary 配置（从环境变量读取�?
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '';
 
 interface CSVImporterProps {
   onImport: (products: Product[]) => void;
@@ -12,11 +17,104 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
   const [isParsing, setIsParsing] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [uploadToCloudinary, setUploadToCloudinary] = useState(true); // 默认启用上传�?Cloudinary
+  const [uploadProgress, setUploadProgress] = useState<string>(''); // 上传进度
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setLogs(prev => [...prev, `[${time}] ${msg}`]);
+  };
+
+  /**
+   * 上传图片�?Cloudinary
+   * @param imageUrl 原始图片 URL
+   * @returns Cloudinary URL
+   */
+  const uploadImageToCloudinary = async (imageUrl: string): Promise<string> => {
+    try {
+      // 调试日志
+      console.log('🔍 Cloudinary Config:', {
+        cloudName: CLOUDINARY_CLOUD_NAME,
+        preset: CLOUDINARY_UPLOAD_PRESET,
+        imageUrl
+      });
+
+      addLog(`📤 上传图片�?Cloudinary: ${imageUrl.substring(0, 50)}...`);
+
+      // 构建 Cloudinary Upload API URL
+      const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+
+      // 创建 FormData
+      const formData = new FormData();
+      formData.append('file', imageUrl); // Cloudinary 支持直接�?URL
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      formData.append('folder', 'products'); // 保存�?products 文件�?
+
+      // 发送上传请�?
+      console.log('📡 Uploading to:', cloudinaryUrl);
+      const response = await fetch(cloudinaryUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      console.log('📥 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('�?Upload error:', errorData);
+        throw new Error(`Cloudinary upload failed: ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      const cloudinaryImageUrl = data.secure_url;
+
+      console.log('�?Upload success:', cloudinaryImageUrl);
+      addLog(`�?图片上传成功: ${cloudinaryImageUrl.substring(0, 50)}...`);
+      return cloudinaryImageUrl;
+    } catch (error: any) {
+      console.error('�?Upload error caught:', error);
+      addLog(`�?图片上传失败: ${error.message}`);
+      // 上传失败时返回原�?URL
+      return imageUrl;
+    }
+  };
+
+  /**
+   * 批量上传图片�?Cloudinary
+   * @param imageUrls 图片 URL 数组
+   * @returns Cloudinary URL 数组
+   */
+  const uploadImagesToCloudinary = async (imageUrls: string[]): Promise<string[]> => {
+    console.log('🔍 uploadImagesToCloudinary called with:', { 
+      uploadToCloudinary, 
+      imageCount: imageUrls.length,
+      images: imageUrls 
+    });
+    
+    if (!uploadToCloudinary || imageUrls.length === 0) {
+      console.log('⚠️ Skipping upload:', { uploadToCloudinary, imageCount: imageUrls.length });
+      return imageUrls;
+    }
+
+    addLog(`🌐 开始批量上�?${imageUrls.length} 张图片到 Cloudinary...`);
+    const uploadedUrls: string[] = [];
+
+    for (let i = 0; i < imageUrls.length; i++) {
+      const url = imageUrls[i];
+      setUploadProgress(`上传进度: ${i + 1}/${imageUrls.length}`);
+      const cloudinaryUrl = await uploadImageToCloudinary(url);
+      uploadedUrls.push(cloudinaryUrl);
+      
+      // 添加延迟避免 Cloudinary API 限流
+      if (i < imageUrls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 每次上传间隔 500ms
+      }
+    }
+
+    setUploadProgress('');
+    addLog(`�?批量上传完成，成功上�?${uploadedUrls.length} 张图片`);
+    return uploadedUrls;
   };
 
   const stripHtml = (html: string) => {
@@ -36,8 +134,8 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
     // 尝试匹配各种列表格式
     const features: string[] = [];
     
-    // 匹配 "- Item" 或 "\u2022 Item" 或 "* Item" 格式
-    const bulletRegex = /^[\s]*[-•*]\s*(.+)$/gm;
+    // 匹配 "- Item" �?"\u2022 Item" �?"* Item" 格式
+    const bulletRegex = /^[\s]*[-�?]\s*(.+)$/gm;
     let match;
     while ((match = bulletRegex.exec(description)) !== null) {
       const feature = match[1].trim();
@@ -46,17 +144,17 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
       }
     }
     
-    // 如果没有找到列表，尝试按段落分割（最多3个）
+    // 如果没有找到列表，尝试按段落分割（最�?个）
     if (features.length === 0) {
       const paragraphs = description.split('\n').filter(p => p.trim().length > 20);
       return paragraphs.slice(0, 3);
     }
     
-    return features.slice(0, 8); // 最多8个特性
+    return features.slice(0, 8); // 最�?个特�?
   };
 
   /**
-   * 核心解析算法：处理引号内的逗号、引号内的换行符以及双引号转义
+   * 核心解析算法：处理引号内的逗号、引号内的换行符以及双引号转�?
    */
   const parseFullCSV = (csvText: string) => {
     const rows: string[][] = [];
@@ -95,14 +193,14 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
     return rows;
   };
 
-  const processCatalog = (csvData: string[][]) => {
+  const processCatalog = async (csvData: string[][]) => {
     try {
-      if (csvData.length < 2) throw new Error("CSV 文件缺少有效数据行。");
+      if (csvData.length < 2) throw new Error("CSV 文件缺少有效数据行");
 
       const rawHeaders = csvData[0];
       const headers = rawHeaders.map(h => h.toLowerCase().trim());
       
-      addLog(`结构分析: 识别到 ${headers.length} 列数据。`);
+      addLog(`结构分析: 识别到${headers.length} 列数据。`);
 
       // 映射 Shopify 常用表头
       const colMap = {
@@ -113,7 +211,7 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
         image: headers.findIndex(h => h === 'image src' || h === 'image url' || h === 'image'),
       };
 
-      if (colMap.handle === -1) throw new Error("CSV 缺少 'Handle' 列，无法进行商品聚合。");
+      if (colMap.handle === -1) throw new Error("CSV 缺少 'Handle' 列，无法进行商品聚合");
 
       const productsMap = new Map<string, Product>();
 
@@ -142,29 +240,29 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
 
           const product: Product = {
             id: `imported-${Date.now()}-${i}`,
-            sku: handle || `SKU-${Date.now()}-${i}`,
-            name: title,
+            sku: sanitizeInput(handle || `SKU-${Date.now()}-${i}`),
+            name: sanitizeInput(title),
             price: parseFloat(cleanPrice) || 0,
             category: "IMPORTED",
             images: (imageSrc && imageSrc.startsWith('http')) ? [imageSrc] : [],
-            description: cleanDescription,
-            features: extractedFeatures,
+            description: sanitizeInput(cleanDescription),
+            features: extractedFeatures.map(f => sanitizeInput(f)),
             specs: {
               material: "N/A",
               size: "N/A",
               noise: "N/A",
               battery: "N/A"
             },
-            stockStatus: 'IN_STOCK'
+            stock_status: 'IN_STOCK'
           };
           
           productsMap.set(handle, product);
         } else if (productsMap.has(handle)) {
-          // 如果没有标题但 Handle 已存在，则是该商品的附加图片或变体行
+          // 如果没有标题，Handle 已存在，则是该商品的附加图片或变体行
           const existing = productsMap.get(handle)!;
           
           if (imageSrc && imageSrc.startsWith('http')) {
-            // 添加到画廊（去重）
+            // 添加到画廊（去重）?
             if (!existing.images.includes(imageSrc)) {
               existing.images.push(imageSrc);
             }
@@ -179,12 +277,34 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
       }
 
       // 最终处理：如果没图，给个占位图
-      const finalProducts = Array.from(productsMap.values()).map(p => ({
+      let finalProducts = Array.from(productsMap.values()).map(p => ({
         ...p,
         images: p.images.length > 0 ? p.images : ['https://images.unsplash.com/photo-1595590424283-b8f17842773f?q=80&w=800']
       }));
 
-      if (finalProducts.length === 0) throw new Error("未能从文件中提取出任何有效商品。");
+      if (finalProducts.length === 0) throw new Error("未能从文件中提取出任何有效商品");
+      
+      // 如果启用了 Cloudinary 上传，批量上传所有图片?
+      console.log('🔍 Checking Cloudinary upload:', { 
+        uploadToCloudinary, 
+        productCount: finalProducts.length 
+      });
+      
+      if (uploadToCloudinary) {
+        addLog(`🔄 准备上传所有产品图片到 Cloudinary...`);
+        
+        finalProducts = await Promise.all(
+          finalProducts.map(async (product) => {
+            const uploadedImages = await uploadImagesToCloudinary(product.images);
+            return {
+              ...product,
+              images: uploadedImages,
+            };
+          })
+        );
+        
+        addLog(`✅ 所有产品图片已上传到 Cloudinary`);
+      }
       
       return finalProducts;
     } catch (err: any) {
@@ -205,19 +325,19 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           addLog("正在解析复杂 CSV 协议...");
           const csvData = parseFullCSV(text);
           addLog("正在基于 Handle 字段进行多图聚合...");
-          const products = processCatalog(csvData);
-          addLog(`同步成功: 已处理 ${products.length} 个独立资产。`);
+          const products = await processCatalog(csvData); // 改为 await
+          addLog(`同步成功: 已处理${products.length} 个独立资产。`);
           onImport(products);
           setIsParsing(false);
         } catch (err: any) {
-          setError(err.message || "数据流解析故障。");
+          setError(err.message || "数据流解析故障");
           setIsParsing(false);
-          addLog("任务终止。");
+          addLog("任务终止");
         }
       }, 300);
     };
@@ -240,6 +360,33 @@ const CSVImporter: React.FC<CSVImporterProps> = ({ onImport, onClose }) => {
         </div>
 
         <div className="p-8">
+          {/* Cloudinary 上传开关 */}
+          <div className="mb-6 flex items-center justify-between p-4 bg-white/[0.02] border border-white/5 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Cloud className="text-[#22d3ee]" size={18} />
+              <div>
+                <p className="text-xs font-bold text-white">上传到 Cloudinary 图床</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">将产品图片自动上传到 Cloudinary 云存储</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={uploadToCloudinary}
+                onChange={(e) => setUploadToCloudinary(e.target.checked)}
+                className="sr-only peer"
+                disabled={isParsing}
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#22d3ee]"></div>
+            </label>
+          </div>
+
+          {uploadProgress && (
+            <div className="mb-4 p-3 bg-[#22d3ee]/10 border border-[#22d3ee]/30 rounded-lg">
+              <p className="text-xs text-[#22d3ee] font-bold">{uploadProgress}</p>
+            </div>
+          )}
+
           <button 
             disabled={isParsing}
             onClick={() => fileInputRef.current?.click()}
