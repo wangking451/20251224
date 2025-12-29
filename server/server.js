@@ -52,7 +52,8 @@ const allowedOrigins = [
   'https://127.0.0.1:5173',
   // 生产环境域名 - 请替换为你的实际域名
   'https://nebula-cyber-store.vercel.app',  // 您的 Vercel 域名
-  'https://www.luremeow.com',  // 您的自定义域名
+  'https://www.luremeow.com',  // 您的自定义域名（带 www）
+  'https://luremeow.com',  // 您的自定义域名（不带 www）
   // 或从环境变量读取
   ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
 ];
