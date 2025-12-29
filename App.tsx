@@ -12,6 +12,8 @@ import { productsAPI } from './services/supabase';
 
 // API 基础 URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || 'AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA';
+const PAYPAL_MODE = import.meta.env.VITE_PAYPAL_MODE || 'sandbox';
 
 // --- CONSTANTS & DATA ---
 
@@ -1956,9 +1958,8 @@ const CheckoutView: React.FC<{
         
         const script = document.createElement('script');
         script.id = 'paypal-sdk-script';
-        // ✅ 恢复到可以工作的配置（移除 enable-funding）
-        // 根据错误，enable-funding=googlepay 导致 400 错误
-        script.src = 'https://www.paypal.com/sdk/js?client-id=AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA&currency=USD&components=buttons,card-fields&enable-funding=paylater';
+        // 使用环境变量中的 PayPal Client ID
+        script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD&components=buttons,card-fields&enable-funding=paylater`;
         script.onerror = (error) => {
             console.error('❌ Failed to load PayPal SDK script!', error);
             console.error('SDK URL:', script.src);
