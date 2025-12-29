@@ -157,24 +157,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
       return;
     }
 
-    const confirmMsg = `解析成功！共找到 ${parsedProducts.length} 个商品。\n\n点击 [确定] 覆盖现有库存。\n点击 [取消] 追加到现有库存。`;
+    const confirmMsg = `解析成功！共找到 ${parsedProducts.length} 个商品。\n\n点击 [确定] 智能合并（按 SKU 更新，保留已有商品）。\n点击 [取消] 追加到现有库存。`;
     
     try {
       if (window.confirm(confirmMsg)) {
-        // 覆盖模式：先删除所有旧数据
-        setImportStatus({ msg: '正在删除旧数据...', type: 'info' });
-        if (products.length > 0) {
-          await productsAPI.bulkDelete(products.map(p => p.id));
-        }
+        // 智能合并模式：按 SKU 匹配更新，保留未匹配的
+        setImportStatus({ msg: '正在智能合并商品...', type: 'info' });
+        const skuMap = new Map(products.map(p => [p.sku, p]));
+        const updatedProducts = [...products];
         
-        // 批量创建新商品
-        setImportStatus({ msg: `正在上传 ${parsedProducts.length} 个商品...`, type: 'info' });
         for (const product of parsedProducts) {
-          await productsAPI.create(product);
+          const existing = skuMap.get(product.sku);
+          if (existing) {
+            // SKU 匹配，更新现有商品
+            await productsAPI.update(existing.id, { ...product, id: existing.id });
+            const index = updatedProducts.findIndex(p => p.id === existing.id);
+            if (index !== -1) {
+              updatedProducts[index] = { ...product, id: existing.id };
+            }
+          } else {
+            // 新商品，添加到库存
+            await productsAPI.create(product);
+            updatedProducts.push(product);
+          }
         }
         
-        onUpdateProducts(parsedProducts);
-        setImportStatus({ msg: `成功覆盖导入 ${parsedProducts.length} 个商品。`, type: 'success' });
+        onUpdateProducts(updatedProducts);
+        setImportStatus({ msg: `成功合并导入 ${parsedProducts.length} 个商品，保留已有商品。`, type: 'success' });
       } else {
         // 追加模式
         setImportStatus({ msg: `正在追加 ${parsedProducts.length} 个商品...`, type: 'info' });
@@ -221,7 +230,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
             return;
          }
 
-         const confirmMsg = `解析成功！共找到 ${parsedProducts.length} 个商品。\n\n点击 [确定] 覆盖现有库存。\n点击 [取消] 追加到现有库存。`;
+         const confirmMsg = `解析成功！共找到 ${parsedProducts.length} 个商品。\n\n点击 [确定] 智能合并（按 SKU 更新，保留已有商品）。\n点击 [取消] 追加到现有库存。`;
          
          if (window.confirm(confirmMsg)) {
              // 覆盖模式
