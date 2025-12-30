@@ -12,6 +12,8 @@ import { productsAPI } from './services/supabase';
 
 // API 基础 URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || 'AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA';
+const PAYPAL_MODE = import.meta.env.VITE_PAYPAL_MODE || 'sandbox';
 
 // --- CONSTANTS & DATA ---
 
@@ -1956,9 +1958,8 @@ const CheckoutView: React.FC<{
         
         const script = document.createElement('script');
         script.id = 'paypal-sdk-script';
-        // ✅ 恢复到可以工作的配置（移除 enable-funding）
-        // 根据错误，enable-funding=googlepay 导致 400 错误
-        script.src = 'https://www.paypal.com/sdk/js?client-id=AWpU3pWBDzw9f0otzwofJphfLltTn7fsu9ZHjisxHM-MRXvVm3zQaMXbLh4GFTeZtv40l9D0mX4l4tmA&currency=USD&components=buttons,card-fields&enable-funding=paylater';
+        // 使用环境变量中的 PayPal Client ID
+        script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD&components=buttons,card-fields&enable-funding=paylater`;
         script.onerror = (error) => {
             console.error('❌ Failed to load PayPal SDK script!', error);
             console.error('SDK URL:', script.src);
@@ -4089,11 +4090,12 @@ const ProductDetailView: React.FC<{
                 <div className="p-6 min-h-[400px]">
                     {activeTab === 'DESC' && (
                         <div className="space-y-4">
-                            {/* 商品描述 */}
+                            {/* 商品描述 - 支持HTML渲染 */}
                             {product.description && (
-                                <div className="mb-6 pb-6 border-b border-white/10">
-                                    <p className="text-gray-300 font-body text-sm leading-relaxed whitespace-pre-line">{product.description}</p>
-                                </div>
+                                <div 
+                                    className="mb-6 pb-6 border-b border-white/10 text-gray-300 font-body text-sm leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: product.description }}
+                                />
                             )}
                             
                             {/* 功能列表 */}
@@ -4640,11 +4642,21 @@ const App: React.FC = () => {
 
   // 检查管理员认证状态
   useEffect(() => {
-    if (isAdminAuthenticated()) {
-      // 已登录，直接打开后台
-      setIsAdminOpen(true);
+    // 只保留 ?admin=true 链接方式登录
+    // 必须在年龄验证后才检查
+    if (!ageVerified) return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('admin') === 'true') {
+      if (!isAdminAuthenticated()) {
+        setShowAdminLogin(true);
+      } else {
+        setIsAdminOpen(true);
+      }
+      // 清除URL参数
+      window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [ageVerified]);
 
   // 处理管理员登录成功
   const handleAdminLoginSuccess = () => {
@@ -4662,6 +4674,9 @@ const App: React.FC = () => {
 
   // 触发管理员登录（可以通过特殊URL参数访问）
   useEffect(() => {
+    // 必须在年龄验证后才检查
+    if (!ageVerified) return;
+    
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('admin') === 'true') {
       if (!isAdminAuthenticated()) {
@@ -4672,7 +4687,7 @@ const App: React.FC = () => {
       // 清除URL参数
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [ageVerified]);
 
   const handleVerifyAge = () => {
     localStorage.setItem('nebula_age_verified', 'true');
@@ -4811,6 +4826,16 @@ const App: React.FC = () => {
 
   if (!ageVerified) return <AgeGate onVerify={handleVerifyAge} />;
 
+  // 如果显示登录页面，直接返回登录组件，不显示首页
+  if (showAdminLogin) {
+    return (
+      <AdminLogin 
+        onLoginSuccess={handleAdminLoginSuccess}
+        onCancel={() => setShowAdminLogin(false)}
+      />
+    );
+  }
+
   return (
     <div className="bg-synth-bg min-h-screen text-white selection:bg-neon-pink selection:text-white font-body relative">
         <Navbar 
@@ -4941,14 +4966,6 @@ const App: React.FC = () => {
         </main>
 
         {view !== 'CHECKOUT' && <Footer onNavigate={(v) => { setView(v); window.scrollTo(0,0); }} />}
-        
-        {/* 管理员登录弹窗 */}
-        {showAdminLogin && (
-          <AdminLogin 
-            onLoginSuccess={handleAdminLoginSuccess}
-            onCancel={() => setShowAdminLogin(false)}
-          />
-        )}
     </div>
   );
 };

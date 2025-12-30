@@ -3,13 +3,17 @@ import {
   LayoutDashboard, Package, Palette, Settings, Upload, Plus, Trash2, Save, 
   Image as ImageIcon, X, ChevronRight, LogOut, Download, AlertTriangle, CheckCircle,
   Search, Video, Layers, List, Tag, Edit3, FileSpreadsheet, RefreshCw, FileText, Globe,
-  Shield, Info, Image, CreditCard, AlertCircle, ShoppingBag, Truck, Eye, DollarSign
+  Shield, Info, Image, CreditCard, AlertCircle, ShoppingBag, Truck, Eye, DollarSign, Link
 } from 'lucide-react';
 import { Product, StoreConfig, HeroSlide, CustomPage, BundleOffer, Order } from '../types';
 import { parseCSVData } from '../services/csvLoader';
 import CSVImporter from './CSVImporter';
 import OrdersManager from './OrdersManager';
 import { productsAPI, ordersAPI } from '../services/supabase';
+
+// Cloudinary 配置
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '';
 
 interface AdminDashboardProps {
   products: Product[];
@@ -19,31 +23,41 @@ interface AdminDashboardProps {
   onExit: () => void;
 }
 
-// 图片处理：压缩并转 Base64
-const processImageFile = (file: File): Promise<string> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = document.createElement('img') as HTMLImageElement;
-      img.src = e.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const maxDim = 800; 
-        let w = img.width;
-        let h = img.height;
-        if (w > maxDim || h > maxDim) {
-           if (w > h) { h = Math.round(h * (maxDim/w)); w = maxDim; }
-           else { w = Math.round(w * (maxDim/h)); h = maxDim; }
-        }
-        canvas.width = w;
-        canvas.height = h;
-        ctx?.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
-      };
-    };
-    reader.readAsDataURL(file);
-  });
+// 上传图片到 Cloudinary
+const uploadToCloudinary = async (file: File): Promise<string> => {
+  try {
+    const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'products');
+    
+    const response = await fetch(cloudinaryUrl, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Cloudinary 上传失败: ${errorData.error?.message || 'Unknown error'}`);
+    }
+    
+    const data = await response.json();
+    return data.secure_url;
+  } catch (error: any) {
+    console.error('Cloudinary upload error:', error);
+    throw error;
+  }
+};
+
+// 图片处理：上传到 Cloudinary
+const processImageFile = async (file: File): Promise<string> => {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error('Cloudinary 未配置！请在 .env.local 中设置 VITE_CLOUDINARY_CLOUD_NAME 和 VITE_CLOUDINARY_UPLOAD_PRESET');
+  }
+  
+  return await uploadToCloudinary(file);
 };
 
 const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
@@ -627,7 +641,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
 
     return (
       <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="bg-synth-panel border border-neon-cyan w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,249,255,0.1)] rounded-lg">
+        <div className="bg-synth-panel border border-neon-cyan w-full max-w-6xl h-[95vh] overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,249,255,0.1)] rounded-lg">
           {/* Header */}
           <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/50">
             <h2 className="font-display text-xl text-white font-bold flex items-center gap-2">
@@ -690,52 +704,106 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
               )}
 
               {editorTab === 'MEDIA' && (
-                 <div className="space-y-8 animate-fade-in">
+                 <div className="space-y-6 animate-fade-in max-w-4xl">
+                    {/* 图片库 - 小缩略图网格 */}
                     <div>
-                       <label className="block text-xs text-neon-cyan font-bold mb-3 flex items-center gap-2"><ImageIcon size={16}/> 图片库 (第一张为主图)</label>
-                       <div className="grid grid-cols-4 gap-4">
+                       <label className="block text-sm text-neon-cyan font-bold mb-4 flex items-center gap-2">
+                         <ImageIcon size={18}/> 主图管理 ✅已修复
+                         <span className="text-gray-400 font-normal text-xs">(第一张为主图 · 建议尺寸: 800x800px)</span>
+                       </label>
+                       
+                       <div className="flex flex-wrap gap-4">
                           {editingProduct.images.map((img, idx) => (
-                             <div key={idx} className="relative group aspect-square bg-black border border-white/10 rounded overflow-hidden">
-                                <img src={img} className="w-full h-full object-cover" />
-                                <button onClick={() => {
-                                  const newImgs = editingProduct.images.filter((_, i) => i !== idx);
-                                  setEditingProduct({...editingProduct, images: newImgs});
-                                }} className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12}/></button>
-                                <div className="absolute bottom-1 left-1 bg-black/70 px-2 text-[10px] text-white rounded">{idx === 0 ? '主图' : `${idx+1}`}</div>
+                             <div key={idx} className="relative group flex-shrink-0">
+                                {/* 缩略图 */}
+                                <div className="w-32 h-32 bg-black border-2 border-white/10 rounded overflow-hidden hover:border-neon-cyan transition-colors">
+                                  <img src={img} className="w-full h-full object-cover" />
+                                </div>
+                                
+                                {/* 主图标记 */}
+                                <div className="absolute top-1 left-1 bg-neon-cyan text-black text-[10px] px-2 py-0.5 rounded font-bold">
+                                  {idx === 0 ? '主图' : `图${idx+1}`}
+                                </div>
+                                
+                                {/* 操作按钮 */}
+                                <div className="absolute bottom-1 left-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <label className="flex-1 cursor-pointer bg-neon-cyan text-black px-2 py-1 rounded text-[10px] font-bold hover:bg-white transition-colors text-center" title="上传替换">
+                                    上传
+                                    <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                                      e.preventDefault();
+                                      if(e.target.files?.[0]) handleImageUpload(e.target.files[0], (url) => {
+                                        const newImgs = [...editingProduct.images];
+                                        newImgs[idx] = url;
+                                        setEditingProduct({...editingProduct, images: newImgs});
+                                      });
+                                    }}/>
+                                  </label>
+                                  <button type="button" onClick={(e) => {
+                                    e.preventDefault();
+                                    const url = prompt('输入图片链接 URL:', img);
+                                    if(url && url.trim()) {
+                                      const newImgs = [...editingProduct.images];
+                                      newImgs[idx] = url.trim();
+                                      setEditingProduct({...editingProduct, images: newImgs});
+                                    }
+                                  }} className="flex-1 bg-purple-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-purple-700 transition-colors" title="链接替换">
+                                    链接
+                                  </button>
+                                  <button type="button" onClick={(e) => {
+                                    e.preventDefault();
+                                    const newImgs = editingProduct.images.filter((_, i) => i !== idx);
+                                    setEditingProduct({...editingProduct, images: newImgs});
+                                  }} className="bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-red-700 transition-colors" title="删除">
+                                    删
+                                  </button>
+                                </div>
                              </div>
                           ))}
-                          <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/20 hover:border-neon-cyan cursor-pointer aspect-square bg-white/5 rounded transition-colors">
-                             {uploading ? <div className="animate-spin text-neon-cyan">C</div> : <Plus className="text-gray-400" />}
-                             <span className="text-xs text-gray-500 mt-2 font-bold">上传图片</span>
+                          
+                          {/* 添加新图片 */}
+                          <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/20 hover:border-neon-cyan cursor-pointer w-32 h-32 bg-white/5 rounded transition-all hover:bg-white/10 flex-shrink-0">
+                             {uploading ? <div className="animate-spin text-neon-cyan text-xl">⟳</div> : <Plus className="text-gray-400" size={24}/>}
+                             <span className="text-[11px] text-gray-500 mt-2 font-bold">{uploading ? '上传中...' : '添加图片'}</span>
                              <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                                e.preventDefault();
                                 if(e.target.files?.[0]) handleImageUpload(e.target.files[0], (url) => setEditingProduct({...editingProduct, images: [...editingProduct.images, url]}));
                              }}/>
                           </label>
                        </div>
-                       <div className="mt-4">
-                          <input className="w-full bg-black border border-white/20 p-2 text-white text-xs rounded" 
-                                 placeholder="或者粘贴图片链接 URL 并回车..."
-                                 onKeyDown={(e) => {
-                                   if(e.key === 'Enter') {
-                                     setEditingProduct({...editingProduct, images: [...editingProduct.images, e.currentTarget.value]});
-                                     e.currentTarget.value = '';
-                                   }
-                                 }}/>
+                       
+                       {/* URL 输入框 */}
+                       <div className="mt-3">
+                          <input 
+                            type="text"
+                            className="w-full bg-black/50 border border-white/10 p-2.5 text-white text-sm rounded placeholder:text-gray-600 focus:border-neon-cyan focus:outline-none" 
+                            placeholder="💡 也可以粘贴图片 URL 链接并按回车添加..."
+                            onKeyDown={(e) => {
+                              if(e.key === 'Enter') {
+                                e.preventDefault();
+                                const url = e.currentTarget.value.trim();
+                                if(url) {
+                                  setEditingProduct({...editingProduct, images: [...editingProduct.images, url]});
+                                  e.currentTarget.value = '';
+                                }
+                              }
+                            }}/>
                        </div>
                     </div>
 
                     <div className="border-t border-white/10 pt-6">
-                       <label className="block text-xs text-neon-cyan font-bold mb-3 flex items-center gap-2"><Video size={16}/> 视频链接 (MP4 URL)</label>
+                       <label className="block text-xs text-neon-cyan font-bold mb-3 flex items-center gap-2">
+                         <Video size={16}/> 视频链接 (MP4 URL)
+                       </label>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
-                             <label className="text-xs text-gray-400 mb-1 block">主展示视频 (详情页轮播)</label>
+                             <label className="text-xs text-gray-400 mb-1 block">主展示视频 (详情页轮播) · 建议尺寸: 1280x720px (横屏 16:9)</label>
                              <input className="w-full bg-black border border-white/20 p-3 text-white text-sm" 
                                     placeholder="https://..."
                                     value={editingProduct.mainVideo || ''}
                                     onChange={e => setEditingProduct({...editingProduct, mainVideo: e.target.value})} />
                           </div>
                           <div>
-                             <label className="text-xs text-gray-400 mb-1 block">竖屏短视频 (首页 Feed 流)</label>
+                             <label className="text-xs text-gray-400 mb-1 block">竖屏短视频 (首页 Feed 流) · 建议尺寸: 1080x1920px (竖屏 9:16)</label>
                              <input className="w-full bg-black border border-white/20 p-3 text-white text-sm" 
                                     placeholder="https://..."
                                     value={editingProduct.socialVideo || ''}
@@ -793,9 +861,115 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
 
               {editorTab === 'DESC' && (
                  <div className="h-full flex flex-col animate-fade-in">
-                    <label className="block text-xs text-neon-cyan font-bold mb-2">商品详细介绍 (支持纯文本，暂不支持富文本)</label>
-                    <textarea className="flex-1 w-full bg-black border border-white/20 p-4 text-white focus:border-neon-pink outline-none leading-relaxed" 
-                              value={editingProduct.description} onChange={e => setEditingProduct({...editingProduct, description: e.target.value})} />
+                    <div className="flex-1 flex flex-col" style={{minHeight: '600px'}}>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs text-neon-cyan font-bold">商品详细介绍 (支持 HTML 标签)</label>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const url = prompt('输入图片链接 URL:');
+                              if(url && url.trim()) {
+                                const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                                if(textarea) {
+                                  const pos = textarea.selectionStart;
+                                  const text = editingProduct.description;
+                                  const imgTag = `\n<img src="${url.trim()}" style="max-width:100%; height:auto; display:block; margin:20px 0;" />\n`;
+                                  const newText = text.slice(0, pos) + imgTag + text.slice(pos);
+                                  setEditingProduct({...editingProduct, description: newText});
+                                  setTimeout(() => {
+                                    textarea.selectionStart = textarea.selectionEnd = pos + imgTag.length;
+                                    textarea.focus();
+                                  }, 50);
+                                }
+                              }
+                            }}
+                            className="cursor-pointer bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-purple-700 transition-colors flex items-center gap-1"
+                          >
+                            <Link size={12}/> 链接图片
+                          </button>
+                          <label className="cursor-pointer bg-neon-cyan text-black px-3 py-1.5 rounded text-xs font-bold hover:bg-white transition-colors flex items-center gap-1">
+                            <ImageIcon size={12}/> 上传图片
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                              e.preventDefault();
+                              if(e.target.files?.[0]) handleImageUpload(e.target.files[0], (url) => {
+                                const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                                if(textarea) {
+                                  const pos = textarea.selectionStart;
+                                  const text = editingProduct.description;
+                                  const imgTag = `\n<img src="${url}" style="max-width:100%; height:auto; display:block; margin:20px 0;" />\n`;
+                                  const newText = text.slice(0, pos) + imgTag + text.slice(pos);
+                                  setEditingProduct({...editingProduct, description: newText});
+                                  setTimeout(() => {
+                                    textarea.selectionStart = textarea.selectionEnd = pos + imgTag.length;
+                                    textarea.focus();
+                                  }, 50);
+                                }
+                              });
+                            }}/>
+                          </label>
+                        </div>
+                      </div>
+                      <div className="mb-2 flex gap-2 flex-wrap">
+                        <button type="button" onClick={(e) => {
+                          e.preventDefault();
+                          const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                          if(textarea) {
+                            const pos = textarea.selectionStart;
+                            const text = editingProduct.description;
+                            const newText = text.slice(0, pos) + '\n<h2 style="color:#00f9ff; font-size:18px; font-weight:bold; margin:20px 0 10px;">标题</h2>\n' + text.slice(pos);
+                            setEditingProduct({...editingProduct, description: newText});
+                          }
+                        }} className="px-2 py-1 bg-white/10 text-white text-xs rounded hover:bg-white/20 font-bold">
+                          插入标题
+                        </button>
+                        <button type="button" onClick={(e) => {
+                          e.preventDefault();
+                          const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                          if(textarea) {
+                            const pos = textarea.selectionStart;
+                            const text = editingProduct.description;
+                            const newText = text.slice(0, pos) + '\n<p style="color:#d1d5db; line-height:1.8; margin:10px 0;">段落文字</p>\n' + text.slice(pos);
+                            setEditingProduct({...editingProduct, description: newText});
+                          }
+                        }} className="px-2 py-1 bg-white/10 text-white text-xs rounded hover:bg-white/20 font-bold">
+                          插入段落
+                        </button>
+                        <button type="button" onClick={(e) => {
+                          e.preventDefault();
+                          const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                          if(textarea) {
+                            const pos = textarea.selectionStart;
+                            const text = editingProduct.description;
+                            const newText = text.slice(0, pos) + '\n<ul style="color:#d1d5db; margin:10px 0; padding-left:20px;">\n  <li>列表项1</li>\n  <li>列表项2</li>\n</ul>\n' + text.slice(pos);
+                            setEditingProduct({...editingProduct, description: newText});
+                          }
+                        }} className="px-2 py-1 bg-white/10 text-white text-xs rounded hover:bg-white/20 font-bold">
+                          插入列表
+                        </button>
+                        <button type="button" onClick={(e) => {
+                          e.preventDefault();
+                          const textarea = document.querySelector('textarea[data-desc="true"]') as HTMLTextAreaElement;
+                          if(textarea) {
+                            const pos = textarea.selectionStart;
+                            const text = editingProduct.description;
+                            const newText = text.slice(0, pos) + '\n<div style="border-top:1px solid rgba(255,255,255,0.1); margin:30px 0;"></div>\n' + text.slice(pos);
+                            setEditingProduct({...editingProduct, description: newText});
+                          }
+                        }} className="px-2 py-1 bg-white/10 text-white text-xs rounded hover:bg-white/20 font-bold">
+                          插入分割线
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-2">💡 图片建议尺寸: 800x600px 或 800x800px · 图片会自动占满宽度 · 上传图片会压缩并转为Base64嵌入数据库</p>
+                      <textarea 
+                        data-desc="true"
+                        className="flex-1 w-full bg-black border border-white/20 p-4 text-white focus:border-neon-pink outline-none leading-relaxed font-mono text-sm resize-none" 
+                        value={editingProduct.description} 
+                        onChange={e => setEditingProduct({...editingProduct, description: e.target.value})} 
+                        placeholder="可以使用 HTML 标签编写内容，例如：\n<h2>产品特点</h2>\n<p>这是一段描述文字</p>\n<img src='图片链接' style='max-width:100%; height:auto; display:block; margin:20px 0;' />\n<img src='图片2' style='max-width:100%; height:auto; display:block;' />\n<ul>\n  <li>特点1</li>\n  <li>特点2</li>\n</ul>"
+                      />
+                    </div>
                  </div>
               )}
 

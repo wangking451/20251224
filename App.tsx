@@ -4090,11 +4090,12 @@ const ProductDetailView: React.FC<{
                 <div className="p-6 min-h-[400px]">
                     {activeTab === 'DESC' && (
                         <div className="space-y-4">
-                            {/* 商品描述 */}
+                            {/* 商品描述 - 支持HTML渲染 */}
                             {product.description && (
-                                <div className="mb-6 pb-6 border-b border-white/10">
-                                    <p className="text-gray-300 font-body text-sm leading-relaxed whitespace-pre-line">{product.description}</p>
-                                </div>
+                                <div 
+                                    className="mb-6 pb-6 border-b border-white/10 text-gray-300 font-body text-sm leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: product.description }}
+                                />
                             )}
                             
                             {/* 功能列表 */}

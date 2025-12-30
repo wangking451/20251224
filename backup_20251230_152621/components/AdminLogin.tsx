@@ -32,7 +32,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onCancel }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-md p-4">
+    <div className="min-h-screen bg-synth-bg flex items-center justify-center p-4">
       <div className="relative border-2 border-neon-cyan bg-synth-panel max-w-md w-full shadow-[0_0_50px_rgba(0,249,255,0.3)]">
         {/* 装饰角 */}
         <div className="absolute -top-2 -left-2 w-4 h-4 bg-neon-pink"></div>

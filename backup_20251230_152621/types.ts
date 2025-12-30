@@ -20,6 +20,7 @@ export interface Product {
   socialVideo?: string;     // For Homepage Vertical Feed
   descriptionVideo?: string; // For Features/Description tab
   description: string;
+  descriptionImages?: string[]; // For Description tab image gallery
   features: string[];
   specs: {
     material: string;
