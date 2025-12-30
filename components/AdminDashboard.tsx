@@ -69,6 +69,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
   const [showCSVImporter, setShowCSVImporter] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(20); // 每页显示 20 个商品
 
   // Computed: 过滤后的商品列表（根据搜索）
   const filteredProducts = productSearchTerm
@@ -77,6 +79,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
         p.sku?.toLowerCase().includes(productSearchTerm.toLowerCase())
       )
     : products;
+
+  // 分页计算
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+  // 搜索时重置到第一页
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [productSearchTerm]);
 
   // 批量删除处理
   const handleBulkDelete = async () => {
@@ -106,12 +119,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
     }
   };
 
-  // 全选/取消全选
+  // 全选/取消全选（只选中当前页）
   const handleSelectAll = () => {
-    if (selectedProducts.size === filteredProducts.length) {
-      setSelectedProducts(new Set());
+    const currentPageIds = new Set(paginatedProducts.map(p => p.id));
+    const allCurrentSelected = paginatedProducts.every(p => selectedProducts.has(p.id));
+    
+    if (allCurrentSelected) {
+      // 取消当前页的选中
+      const newSelected = new Set(selectedProducts);
+      currentPageIds.forEach(id => newSelected.delete(id));
+      setSelectedProducts(newSelected);
     } else {
-      setSelectedProducts(new Set(filteredProducts.map(p => p.id)));
+      // 选中当前页所有
+      const newSelected = new Set(selectedProducts);
+      currentPageIds.forEach(id => newSelected.add(id));
+      setSelectedProducts(newSelected);
     }
   };
 
@@ -972,7 +994,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-white/10">
-                         {filteredProducts.map(p => (
+                         {paginatedProducts.map(p => (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors group">
                                <td className="p-4">
                                  <input
@@ -1002,19 +1024,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                                   </span>
                                </td>
                                <td className="p-4 text-right">
-                                  <button onClick={() => setEditingProduct(p)} className="text-gray-400 hover:text-white mr-4 text-sm font-bold">编辑</button>
-                                  <button onClick={() => { if(confirm('确定删除该商品吗？无法恢复。')) onUpdateProducts(products.filter(x=>x.id!==p.id)) }} className="text-gray-400 hover:text-red-500 text-sm font-bold">删除</button>
+                                  <button onClick={() => setEditingProduct(p)} className="text-gray-400 hover:text-white text-sm font-bold">编辑</button>
                                </td>
                             </tr>
                          ))}
                       </tbody>
                    </table>
-                   {filteredProducts.length === 0 && (
+                   {paginatedProducts.length === 0 && (
                       <div className="p-8 text-center text-gray-500">
                          未找到匹配的商品
                       </div>
                    )}
                 </div>
+                
+                {/* 分页控件 */}
+                {totalPages > 1 && (
+                  <div className="mt-6 flex items-center justify-between">
+                    <div className="text-sm text-gray-400">
+                      显示 {startIndex + 1} - {Math.min(endIndex, filteredProducts.length)} / 共 {filteredProducts.length} 个商品
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="px-4 py-2 bg-white/5 border border-white/10 text-white text-sm font-bold rounded hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        上一页
+                      </button>
+                      <div className="flex gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter(page => {
+                            // 显示当前页、前后各两页、第一页和最后一页
+                            return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2;
+                          })
+                          .map((page, idx, arr) => (
+                            <React.Fragment key={page}>
+                              {idx > 0 && arr[idx - 1] !== page - 1 && (
+                                <span className="px-3 py-2 text-gray-500">…</span>
+                              )}
+                              <button
+                                onClick={() => setCurrentPage(page)}
+                                className={`px-4 py-2 text-sm font-bold rounded ${
+                                  currentPage === page
+                                    ? 'bg-neon-cyan text-black'
+                                    : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            </React.Fragment>
+                          ))}
+                      </div>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-4 py-2 bg-white/5 border border-white/10 text-white text-sm font-bold rounded hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  </div>
+                )}
              </div>
           )}
 
