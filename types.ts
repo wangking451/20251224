@@ -133,6 +133,12 @@ export interface Order {
   updatedAt: string;
 }
 
+// 分类结构
+export interface Category {
+  name: string;  // 主分类名称，如 "DILDOS"
+  subcategories: string[];  // 二级分类，如 ["Realistic", "Fantasy", ...]
+}
+
 export interface StoreConfig {
   storeName: string;
   shopName?: string;
@@ -142,7 +148,8 @@ export interface StoreConfig {
   contactEmail?: string;
   heroSlides: HeroSlide[];
   sectors: SectorCard[];
-  categories: string[];
+  categories: string[];  // 关于待兼容，保留旧字段
+  categoryTree?: Category[];  // 新增：支持二级分类
   customPages?: CustomPage[];  // 自定义页面列表
   bundleOffers?: BundleOffer[];  // 商品组合列表
   

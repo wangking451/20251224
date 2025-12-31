@@ -1,11 +1,11 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, Package, Palette, Settings, Upload, Plus, Trash2, Save, 
-  Image as ImageIcon, X, ChevronRight, LogOut, Download, AlertTriangle, CheckCircle,
+  Image as ImageIcon, X, ChevronRight, ChevronDown, LogOut, Download, AlertTriangle, CheckCircle,
   Search, Video, Layers, List, Tag, Edit3, FileSpreadsheet, RefreshCw, FileText, Globe,
   Shield, Info, Image, CreditCard, AlertCircle, ShoppingBag, Truck, Eye, DollarSign, Link
 } from 'lucide-react';
-import { Product, StoreConfig, HeroSlide, CustomPage, BundleOffer, Order } from '../types';
+import { Product, StoreConfig, HeroSlide, CustomPage, BundleOffer, Order, Category } from '../types';
 import { parseCSVData } from '../services/csvLoader';
 import CSVImporter from './CSVImporter';
 import OrdersManager from './OrdersManager';
@@ -60,6 +60,165 @@ const processImageFile = async (file: File): Promise<string> => {
   return await uploadToCloudinary(file);
 };
 
+// 单个分类项组件
+const CategoryItem: React.FC<{
+  category: { name: string; subcategories?: string[] };
+  productCount: number;
+  categoryList: { name: string; subcategories?: string[] }[];
+  onUpdateConfig: (config: StoreConfig) => void;
+  onUpdateProducts: (products: Product[]) => void;
+  config: StoreConfig;
+  products: Product[];
+}> = ({ category, productCount, categoryList, onUpdateConfig, onUpdateProducts, config, products }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+      {/* 主分类行 */}
+      <div className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+        <div className="flex items-center gap-3 flex-1">
+          <button 
+            onClick={() => setExpanded(!expanded)}
+            className="text-neon-cyan hover:text-white transition-colors"
+          >
+            {expanded ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}
+          </button>
+          <Tag size={16} className="text-neon-cyan"/>
+          <span className="font-bold text-white text-lg">{category.name}</span>
+          <span className="text-xs text-gray-500">({productCount} 个商品, {category.subcategories?.length || 0} 个子分类)</span>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => {
+              const subName = prompt(`为 "${category.name}" 添加子分类:`);
+              if (subName && subName.trim()) {
+                if (category.subcategories?.includes(subName.trim())) {
+                  alert('该子分类已存在！');
+                } else {
+                  const updatedTree = categoryList.map(cat => 
+                    cat.name === category.name 
+                      ? { ...cat, subcategories: [...(cat.subcategories || []), subName.trim()] }
+                      : cat
+                  ) as Category[];
+                  onUpdateConfig({...config, categoryTree: updatedTree});
+                }
+              }
+            }}
+            className="px-3 py-1 bg-neon-purple/20 hover:bg-neon-purple/40 text-neon-purple text-xs font-bold rounded transition-colors flex items-center gap-1"
+          >
+            <Plus size={12}/> 添加子分类
+          </button>
+          
+          <button 
+            onClick={() => {
+              const newName = prompt(`修改主分类名称:`, category.name);
+              if (newName && newName.trim() && newName.trim() !== category.name) {
+                if (categoryList.some(c => c.name === newName.trim())) {
+                  alert('该分类名称已存在！');
+                } else {
+                  const updatedTree = categoryList.map(cat => 
+                    cat.name === category.name ? { ...cat, name: newName.trim() } : cat
+                  ) as Category[];
+                  const updatedCategories = config.categories.map(c => 
+                    c === category.name ? newName.trim() : c
+                  );
+                  onUpdateConfig({...config, categoryTree: updatedTree, categories: updatedCategories});
+                  const updatedProducts = products.map(p => 
+                    p.category === category.name ? { ...p, category: newName.trim() } : p
+                  );
+                  onUpdateProducts(updatedProducts);
+                }
+              }
+            }}
+            className="text-gray-400 hover:text-white text-sm font-bold"
+          >
+            编辑
+          </button>
+          
+          <button 
+            onClick={() => {
+              if (productCount > 0) {
+                if (!confirm(`该分类下有 ${productCount} 个商品，删除后这些商品将变为未分类。\n\n确定要删除分类 "${category.name}" 吗？`)) {
+                  return;
+                }
+              } else if (!confirm(`确定要删除分类 "${category.name}" 吗？`)) {
+                return;
+              }
+              const updatedTree = categoryList.filter(cat => cat.name !== category.name) as Category[];
+              const updatedCategories = config.categories.filter(c => c !== category.name);
+              onUpdateConfig({...config, categoryTree: updatedTree, categories: updatedCategories});
+            }}
+            className="text-gray-400 hover:text-red-500 text-sm font-bold"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+      
+      {/* 子分类列表（展开时显示） */}
+      {expanded && category.subcategories && category.subcategories.length > 0 && (
+        <div className="bg-black/30 border-t border-white/10 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {category.subcategories.map((sub, subIdx) => (
+              <div key={subIdx} className="flex items-center justify-between bg-white/5 p-3 rounded group hover:bg-white/10 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-4 bg-neon-purple rounded"></div>
+                  <span className="text-sm text-gray-300">{sub}</span>
+                </div>
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => {
+                      const newSubName = prompt(`修改子分类名称:`, sub);
+                      if (newSubName && newSubName.trim() && newSubName.trim() !== sub) {
+                        if (category.subcategories?.includes(newSubName.trim())) {
+                          alert('该子分类名称已存在！');
+                        } else {
+                          const updatedTree = categoryList.map(cat => 
+                            cat.name === category.name
+                              ? { ...cat, subcategories: cat.subcategories?.map(s => s === sub ? newSubName.trim() : s) }
+                              : cat
+                          ) as Category[];
+                          onUpdateConfig({...config, categoryTree: updatedTree});
+                        }
+                      }
+                    }}
+                    className="text-xs text-gray-500 hover:text-white"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`确定要删除子分类 "${sub}" 吗？`)) {
+                        const updatedTree = categoryList.map(cat => 
+                          cat.name === category.name
+                            ? { ...cat, subcategories: cat.subcategories?.filter(s => s !== sub) }
+                            : cat
+                        ) as Category[];
+                        onUpdateConfig({...config, categoryTree: updatedTree});
+                      }
+                    }}
+                    className="text-xs text-gray-500 hover:text-red-500"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {expanded && (!category.subcategories || category.subcategories.length === 0) && (
+        <div className="bg-black/30 border-t border-white/10 p-6 text-center">
+          <p className="text-gray-500 text-sm">该分类还没有子分类</p>
+          <p className="text-xs text-gray-600 mt-1">点击"添加子分类"按钮开始创建</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
   <button 
     onClick={onClick}
@@ -70,7 +229,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
 );
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config, onUpdateProducts, onUpdateConfig, onExit }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRODUCTS' | 'DESIGN' | 'PAGES' | 'BUNDLES' | 'ORDERS' | 'SETTINGS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRODUCTS' | 'DESIGN' | 'PAGES' | 'BUNDLES' | 'ORDERS' | 'CATEGORIES' | 'SETTINGS'>('OVERVIEW');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingPage, setEditingPage] = useState<CustomPage | null>(null);
   const [editingBundle, setEditingBundle] = useState<BundleOffer | null>(null);
@@ -130,6 +289,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
     } catch (error: any) {
       console.error('Bulk delete error:', error);
       setImportStatus({ msg: `删除失败: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // 批量设置分类
+  const handleBulkSetCategory = async () => {
+    if (selectedProducts.size === 0) {
+      alert('请先选择要设置分类的商品');
+      return;
+    }
+
+    const category = prompt(`为选中的 ${selectedProducts.size} 个商品设置分类:\n\n当前分类:\n${config.categories.join(', ')}`, config.categories[0] || '');
+    if (!category || !category.trim()) return;
+
+    try {
+      setImportStatus({ msg: `正在设置分类...`, type: 'info' });
+      
+      const updatedProducts = products.map(p => 
+        selectedProducts.has(p.id) ? { ...p, category: category.trim() } : p
+      );
+      
+      // 批量更新数据库
+      for (const productId of selectedProducts) {
+        const product = updatedProducts.find(p => p.id === productId);
+        if (product) {
+          await productsAPI.update(productId, product);
+        }
+      }
+      
+      onUpdateProducts(updatedProducts);
+      setSelectedProducts(new Set());
+      
+      setImportStatus({ msg: `成功设置 ${selectedProducts.size} 个商品的分类`, type: 'success' });
+    } catch (error: any) {
+      console.error('Bulk set category error:', error);
+      setImportStatus({ msg: `设置失败: ${error.message}`, type: 'error' });
     }
   };
 
@@ -1001,6 +1195,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
           <nav className="flex-1 py-6 space-y-1">
              <TabButton active={activeTab === 'OVERVIEW'} onClick={() => setActiveTab('OVERVIEW')} icon={<LayoutDashboard size={18}/>} label="概览 & 导入" />
              <TabButton active={activeTab === 'PRODUCTS'} onClick={() => setActiveTab('PRODUCTS')} icon={<Package size={18}/>} label="商品管理" />
+             <TabButton active={activeTab === 'CATEGORIES'} onClick={() => setActiveTab('CATEGORIES')} icon={<Tag size={18}/>} label="分类管理" />
              <TabButton active={activeTab === 'ORDERS'} onClick={() => setActiveTab('ORDERS')} icon={<ShoppingBag size={18}/>} label="订单管理" />
              <TabButton active={activeTab === 'DESIGN'} onClick={() => setActiveTab('DESIGN')} icon={<Palette size={18}/>} label="店铺 & 首页" />
              <TabButton active={activeTab === 'PAGES'} onClick={() => setActiveTab('PAGES')} icon={<FileText size={18}/>} label="页面管理" />
@@ -1139,6 +1334,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                         取消选择
                       </button>
                       <button
+                        onClick={handleBulkSetCategory}
+                        className="px-4 py-2 bg-neon-cyan hover:bg-neon-pink text-black text-sm font-bold rounded flex items-center gap-2"
+                      >
+                        <Tag size={16}/> 批量设置分类
+                      </button>
+                      <button
                         onClick={handleBulkDelete}
                         className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded flex items-center gap-2"
                       >
@@ -1269,6 +1470,79 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
             />
           )}
 
+          {activeTab === 'CATEGORIES' && (
+             <div className="animate-fade-in">
+                <div className="flex justify-between items-center mb-8">
+                   <h1 className="text-3xl font-display font-bold text-white">分类管理</h1>
+                   <button onClick={() => {
+                      const name = prompt('请输入新主分类名称:');
+                      if (name && name.trim()) {
+                        // 检查是否已存在（在 categories 或 categoryTree 中）
+                        const existsInOld = config.categories?.includes(name.trim());
+                        const existsInNew = config.categoryTree?.some(cat => cat.name === name.trim());
+                        
+                        if (existsInOld || existsInNew) {
+                          alert('该分类已存在！');
+                        } else {
+                          // 添加到 categoryTree
+                          const newCategory: Category = { name: name.trim(), subcategories: [] };
+                          const updatedTree = [...(config.categoryTree || []), newCategory];
+                          onUpdateConfig({...config, categoryTree: updatedTree, categories: [...config.categories, name.trim()]});
+                        }
+                      }
+                   }} className="bg-neon-cyan text-black px-4 py-2 font-bold text-sm hover:bg-white rounded flex items-center gap-2">
+                      <Plus size={16}/> 添加主分类
+                   </button>
+                </div>
+                
+                <div className="space-y-3">
+                   {(() => {
+                     const categoryList = config.categoryTree && config.categoryTree.length > 0
+                       ? config.categoryTree
+                       : config.categories.map(name => ({ name, subcategories: [] }));
+                     
+                     return categoryList.map((category, idx) => {
+                       const productCount = products.filter(p => p.category === category.name).length;
+                       return (
+                         <CategoryItem
+                           key={idx}
+                           category={category}
+                           productCount={productCount}
+                           categoryList={categoryList}
+                           onUpdateConfig={onUpdateConfig}
+                           onUpdateProducts={onUpdateProducts}
+                           config={config}
+                           products={products}
+                         />
+                       );
+                     });
+                   })()}
+                   
+                   {(!config.categoryTree || config.categoryTree.length === 0) && config.categories.length === 0 && (
+                      <div className="bg-white/5 border border-white/10 p-12 text-center rounded-lg">
+                         <Tag size={48} className="mx-auto text-gray-600 mb-4"/>
+                         <p className="text-gray-500 mb-2">还没有创建任何分类</p>
+                         <p className="text-xs text-gray-600">点击"添加主分类"按钮开始创建</p>
+                      </div>
+                   )}
+                </div>
+                
+                <div className="mt-6 bg-neon-cyan/10 border border-neon-cyan/30 p-4 rounded">
+                   <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-neon-cyan"/> 使用说明
+                   </h4>
+                   <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                      <li>支持二级分类：主分类下可添加多个子分类，前台将以下拉菜单形式展示</li>
+                      <li>点击主分类左侧的箭头可展开/折叠查看子分类</li>
+                      <li>修改主分类名称时，会自动更新该分类下所有商品</li>
+                      <li>删除主分类后，该分类下的商品不会被删除，但会变为未分类</li>
+                      <li>子分类仅用于前台导航展示，不影响商品筛选（商品仍按主分类筛选）</li>
+                      <li>在商品管理页面可以批量设置商品的主分类</li>
+                   </ul>
+                </div>
+             </div>
+          )}
+
           {activeTab === 'DESIGN' && (
              <div className="max-w-4xl space-y-12 animate-fade-in">
                 {/* BRANDING */}
@@ -1341,51 +1615,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
 
                 {/* 轮播图管理 */}
                 <section>
-                   <h2 className="text-xl font-display text-neon-yellow mb-6 pb-2 border-b border-white/10">轮播图 (Hero Carousel) <span className="text-xs text-gray-500 font-normal ml-2">推荐: 1920x800px</span></h2>
+                   <h2 className="text-xl font-display text-neon-yellow mb-6 pb-2 border-b border-white/10">轮播图 (Hero Carousel) <span className="text-xs text-gray-500 font-normal ml-2">推荐: 1920x600px</span></h2>
                    <div className="space-y-4">
                       {config.heroSlides.map((slide, idx) => (
-                        <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded grid grid-cols-1 md:grid-cols-3 gap-4">
-                           <div>
-                             <label className="block text-xs text-gray-400 mb-2">图片URL</label>
-                             <input 
-                               type="text" 
-                               value={slide.image}
-                               onChange={e => {
-                                 const newSlides = [...config.heroSlides];
-                                 newSlides[idx].image = e.target.value;
-                                 onUpdateConfig({...config, heroSlides: newSlides});
-                               }}
-                               className="w-full bg-black/60 border border-white/20 p-2 text-white text-sm rounded focus:border-neon-cyan outline-none"
-                             />
+                        <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded space-y-3">
+                           <div className="space-y-3">
+                             <div>
+                               <label className="block text-xs text-gray-400 mb-2">图片URL</label>
+                               <input 
+                                 type="text" 
+                                 value={slide.image}
+                                 onChange={e => {
+                                   const newSlides = [...config.heroSlides];
+                                   newSlides[idx].image = e.target.value;
+                                   onUpdateConfig({...config, heroSlides: newSlides});
+                                 }}
+                                 className="w-full bg-black/60 border border-white/20 p-3 text-white text-sm rounded focus:border-neon-cyan outline-none"
+                                 placeholder="https://..."
+                               />
+                             </div>
+                             <div>
+                               <label className="block text-xs text-gray-400 mb-2">按钮文字 (CTA Button)</label>
+                               <input 
+                                 type="text" 
+                                 value={slide.cta}
+                                 onChange={e => {
+                                   const newSlides = [...config.heroSlides];
+                                   newSlides[idx].cta = e.target.value;
+                                   onUpdateConfig({...config, heroSlides: newSlides});
+                                 }}
+                                 className="w-full bg-black/60 border border-white/20 p-2 text-white text-sm rounded focus:border-neon-cyan outline-none"
+                                 placeholder="如: SHOP NOW"
+                               />
+                             </div>
                            </div>
-                           <div>
-                             <label className="block text-xs text-gray-400 mb-2">标题</label>
-                             <input 
-                               type="text" 
-                               value={slide.title}
-                               onChange={e => {
-                                 const newSlides = [...config.heroSlides];
-                                 newSlides[idx].title = e.target.value;
+                           <button 
+                             onClick={() => {
+                               if (config.heroSlides.length <= 1) {
+                                 alert('至少需要保留一张轮播图！');
+                                 return;
+                               }
+                               if (confirm('确定要删除这张轮播图吗？')) {
+                                 const newSlides = config.heroSlides.filter((_, i) => i !== idx);
                                  onUpdateConfig({...config, heroSlides: newSlides});
-                               }}
-                               className="w-full bg-black/60 border border-white/20 p-2 text-white text-sm rounded focus:border-neon-cyan outline-none"
-                             />
-                           </div>
-                           <div>
-                             <label className="block text-xs text-gray-400 mb-2">副标题</label>
-                             <input 
-                               type="text" 
-                               value={slide.subtitle}
-                               onChange={e => {
-                                 const newSlides = [...config.heroSlides];
-                                 newSlides[idx].subtitle = e.target.value;
-                                 onUpdateConfig({...config, heroSlides: newSlides});
-                               }}
-                               className="w-full bg-black/60 border border-white/20 p-2 text-white text-sm rounded focus:border-neon-cyan outline-none"
-                             />
-                           </div>
+                               }
+                             }}
+                             className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1"
+                           >
+                             <Trash2 size={14}/> 删除轮播图
+                           </button>
                         </div>
                       ))}
+                      <button 
+                        onClick={() => {
+                          const newSlides = [...config.heroSlides, {
+                            id: Date.now().toString(),
+                            image: '',
+                            title1: '',
+                            title2: '',
+                            subtitle: '',
+                            desc: '',
+                            cta: 'SHOP NOW'
+                          }];
+                          onUpdateConfig({...config, heroSlides: newSlides});
+                        }}
+                        className="w-full border-2 border-dashed border-white/20 hover:border-neon-yellow py-3 rounded flex items-center justify-center gap-2 text-gray-400 hover:text-white transition-colors"
+                      >
+                        <Plus size={16}/> 添加新轮播图
+                      </button>
                    </div>
                 </section>
 

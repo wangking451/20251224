@@ -166,7 +166,7 @@ const getTranslation = (text: string): string => {
 };
 
 // 定义二级分类结构 - 更新为常见情趣用品分类
-const CATEGORY_TREE: Record<string, string[]> = {
+const DEFAULT_CATEGORY_TREE: Record<string, string[]> = {
   'VIBES': ['Wands', 'Rabbits', 'Bullets', 'App-Controlled', 'Remote'],
   'DILDOS': ['Realistic', 'Fantasy', 'Glass & Metal', 'Strap-Ons', 'Double-Ended'],
   'ANAL': ['Plugs', 'Beads', 'Prostate', 'Training Kits', 'Douches'],
@@ -174,6 +174,30 @@ const CATEGORY_TREE: Record<string, string[]> = {
   'BONDAGE': ['Restraints', 'Cuffs & Collars', 'Impact', 'Masks', 'Rope'],
   'LINGERIE': ['Harnesses', 'Bodystockings', 'Latex', 'Costumes'],
   'FLUIDS': ['Lubricants', 'Massage Oils', 'Cleaners', 'Stimulants']
+};
+
+// 从 config 生成分类树（先不支持二级，为每个分类生成空数组）
+const getCategoryTree = (config: StoreConfig): Record<string, string[]> => {
+  // 如果有 categoryTree 字段，优先使用
+  if (config.categoryTree && config.categoryTree.length > 0) {
+    const tree: Record<string, string[]> = {};
+    config.categoryTree.forEach(cat => {
+      tree[cat.name] = cat.subcategories || [];
+    });
+    return tree;
+  }
+  
+  // 否则使用 categories 字段，为每个分类生成空数组
+  if (config.categories && config.categories.length > 0) {
+    const tree: Record<string, string[]> = {};
+    config.categories.forEach(cat => {
+      tree[cat] = DEFAULT_CATEGORY_TREE[cat] || [];  // 如果默认有二级分类就用，否则为空
+    });
+    return tree;
+  }
+  
+  // 都没有就用默认
+  return DEFAULT_CATEGORY_TREE;
 };
 
 // --- UTILS ---
@@ -315,9 +339,11 @@ const FeaturedProductsSection: React.FC<{
     allProducts: Product[];
     onProductClick: (p: Product) => void;
     onNavigate: (v: ViewState) => void;
-}> = ({ allProducts, onProductClick, onNavigate }) => {
+    config: StoreConfig;  // 添加 config prop
+}> = ({ allProducts, onProductClick, onNavigate, config }) => {
     const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
     
+    const CATEGORY_TREE = getCategoryTree(config);  // 动态获取分类树
     const categories = ['ALL', ...Object.keys(CATEGORY_TREE)];
     
     const filteredProducts = selectedCategory === 'ALL' 
@@ -421,9 +447,10 @@ const FeaturedProductsSection: React.FC<{
     );
 };
 
-// Updated: Hero Carousel using internal slides data
-const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavigate }) => {
-  const slides = [
+// Updated: Hero Carousel reading from config.heroSlides
+const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void; slides?: any[] }> = ({ onNavigate, slides }) => {
+  // 如果没有传入 slides 或为空，使用默认数据
+  const displaySlides = (slides && slides.length > 0) ? slides : [
     {
       id: 1,
       image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070',
@@ -431,8 +458,7 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavi
       title1: 'Digital',
       title2: 'Sunset',
       desc: 'Bridging the gap between biological desire and digital perfection. High-fidelity haptics for the modern soul.',
-      btn1: 'Enter Shop',
-      btn2: 'View Lookbook'
+      cta: 'SHOP NOW'
     },
     {
       id: 2,
@@ -441,8 +467,7 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavi
       title1: 'Cyber',
       title2: 'Flesh',
       desc: 'Experience the new wave of sensory augmentation. Resistance is futile when pleasure is this precise.',
-      btn1: 'Shop Now',
-      btn2: 'Learn More'
+      cta: 'SHOP NOW'
     },
     {
       id: 3,
@@ -451,8 +476,7 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavi
       title1: 'Neural',
       title2: 'Sync',
       desc: 'Direct interface protocols for maximum transmission speed. Your secrets are safe in the void.',
-      btn1: 'Connect',
-      btn2: 'Protocol'
+      cta: 'SHOP NOW'
     }
   ];
 
@@ -460,68 +484,52 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavi
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrent(prev => (prev + 1) % slides.length);
+      setCurrent(prev => (prev + 1) % displaySlides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [slides.length]);
+  }, [displaySlides.length]);
 
-  const nextSlide = () => setCurrent(prev => (prev + 1) % slides.length);
-  const prevSlide = () => setCurrent(prev => (prev - 1 + slides.length) % slides.length);
+  const nextSlide = () => setCurrent(prev => (prev + 1) % displaySlides.length);
+  const prevSlide = () => setCurrent(prev => (prev - 1 + displaySlides.length) % displaySlides.length);
   
-  // Simple handler mapping
-  const getAction = (text: string) => {
-    if (text.includes("Shop") || text.includes("Connect")) return () => onNavigate('SHOP');
-    if (text.includes("Lookbook")) return () => onNavigate('LOOKBOOK');
-    return () => onNavigate('SHOP');
-  }
+  // CTA按钮统一跳转到商店
+  const handleCTAClick = () => onNavigate('SHOP');
 
   return (
-    <section className="relative h-[85vh] flex flex-col justify-center items-center text-center px-6 overflow-hidden group border-b border-neon-purple/30">
-        {slides.map((slide, index) => (
+    <section className="relative w-full h-[600px] overflow-hidden">
+        {displaySlides.map((slide, index) => (
             <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === current ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
-                {/* Background Image with Zoom Effect */}
-                <div 
-                    className="absolute inset-0 bg-cover bg-center opacity-40 transition-transform duration-[8000ms] ease-linear" 
+                {/* Background Image - 固定高度 */}
+                <img 
+                    src={slide.image}
+                    alt="Hero slide"
+                    className="w-full h-full object-cover transition-transform duration-[8000ms] ease-linear" 
                     style={{ 
-                        backgroundImage: `url('${slide.image}')`, 
                         transform: index === current ? 'scale(1.1)' : 'scale(1)' 
                     }}
-                ></div>
-                {/* Gradients */}
-                <div className="absolute inset-0 bg-gradient-to-t from-synth-bg via-synth-bg/60 to-transparent"></div>
-                <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent"></div>
+                />
             </div>
         ))}
 
-        {/* Content - Using key to trigger re-animation */}
-        <div key={current} className="relative z-20 max-w-5xl animate-fade-in">
-             <div className="text-neon-cyan font-display tracking-[0.5em] text-sm mb-4 animate-pulse">
-                {slides[current].subtitle}
-             </div>
-             <h1 className="font-display text-5xl md:text-9xl font-black uppercase italic leading-none mb-6 transform -skew-x-6 drop-shadow-[4px_4px_0px_rgba(255,0,255,1)]">
-               <span className="text-white block opacity-0 animate-[fadeIn_0.5s_ease-out_forwards]">{slides[current].title1}</span>
-               <span className="text-transparent bg-clip-text bg-gradient-to-b from-neon-yellow to-neon-pink block mt-2 opacity-0 animate-[fadeIn_0.5s_ease-out_0.2s_forwards]">{slides[current].title2}</span>
-             </h1>
-             <p className="font-body text-gray-300 text-lg md:text-xl max-w-xl mx-auto mb-12 tracking-wide uppercase font-bold border-l-4 border-neon-purple pl-6 text-left opacity-0 animate-[fadeIn_0.5s_ease-out_0.4s_forwards]">
-                {slides[current].desc}
-             </p>
+        {/* Content - 只保留 CTA 按钮，位置靠底部 */}
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 animate-fade-in">
+             {/* 只保留 CTA 按钮 */}
              <div className="flex gap-6 justify-center opacity-0 animate-[fadeIn_0.5s_ease-out_0.6s_forwards]">
-                <RetroButton onClick={getAction(slides[current].btn1)}>{getTranslation(slides[current].btn1)}</RetroButton>
-                <RetroButton variant="secondary" onClick={getAction(slides[current].btn2)}>{getTranslation(slides[current].btn2)}</RetroButton>
+                <RetroButton onClick={handleCTAClick}>{getTranslation(displaySlides[current].cta || 'SHOP NOW')}</RetroButton>
              </div>
         </div>
         
         {/* Navigation Arrows */}
-        <button onClick={prevSlide} className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm group-hover:opacity-100 opacity-0 transition-opacity duration-300">
+        <button onClick={prevSlide} className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
             <ChevronLeft size={48} />
         </button>
-        <button onClick={nextSlide} className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm group-hover:opacity-100 opacity-0 transition-opacity duration-300">
+        <button onClick={nextSlide} className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
             <ChevronRight size={48} />
         </button>
 
         {/* Dots */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 flex gap-4">
-            {slides.map((_, idx) => (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4">
+            {displaySlides.map((_, idx) => (
                 <button 
                     key={idx} 
                     onClick={() => setCurrent(idx)}
@@ -529,9 +537,6 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavi
                 />
             ))}
         </div>
-        
-        {/* Scanline */}
-        <div className="absolute inset-0 bg-[url('https://media.giphy.com/media/xT9Igk31elskVqFfGM/giphy.gif')] opacity-[0.03] pointer-events-none z-10 mix-blend-overlay bg-repeat"></div>
     </section>
   );
 }
@@ -667,7 +672,8 @@ const WriteReviewModal: React.FC<{ isOpen: boolean; onClose: () => void; onSubmi
   );
 }
 
-const DesktopCategoryNav: React.FC<{ onSelect: (cat: string, subCat?: string) => void }> = ({ onSelect }) => {
+const DesktopCategoryNav: React.FC<{ onSelect: (cat: string, subCat?: string) => void; config: StoreConfig }> = ({ onSelect, config }) => {
+  const CATEGORY_TREE = getCategoryTree(config);
   return (
     <div className="hidden md:block fixed top-20 left-0 w-full bg-black/90 backdrop-blur-md border-b border-white/10 z-40 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
       <div className="max-w-7xl mx-auto flex justify-center">
@@ -705,7 +711,8 @@ const DesktopCategoryNav: React.FC<{ onSelect: (cat: string, subCat?: string) =>
   );
 };
 
-const MobileCategoryBar: React.FC<{ onSelect: (cat: string) => void, activeCat?: string }> = ({ onSelect, activeCat }) => {
+const MobileCategoryBar: React.FC<{ onSelect: (cat: string) => void, activeCat?: string; config: StoreConfig }> = ({ onSelect, activeCat, config }) => {
+  const CATEGORY_TREE = getCategoryTree(config);
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-black/40 backdrop-blur-xl border-t border-white/10 pb-4 pt-3 w-full shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
        <div className="flex overflow-x-auto no-scrollbar px-4 pb-2 gap-3 items-center">
@@ -3509,11 +3516,14 @@ const ShopView: React.FC<{
   initialSearch: string; 
   allProducts: Product[]; 
   initialCategory?: string;
-}> = ({ onProductClick, initialSearch, allProducts, initialCategory }) => {
+  config: StoreConfig;
+}> = ({ onProductClick, initialSearch, allProducts, initialCategory, config }) => {
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'NEW' | 'PRICE_ASC' | 'PRICE_DESC'>('NEW');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 16; // 每页显示 16 个商品
+  
+  const CATEGORY_TREE = getCategoryTree(config);  // 动态获取分类树
 
   // Update local filter if prop changes
   useEffect(() => {
@@ -4269,7 +4279,7 @@ const Footer: React.FC<{ onNavigate: (v: ViewState) => void }> = ({ onNavigate }
     </footer>
 );
 
-const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (p: Product) => void; allProducts: Product[]; onSelectCategory: (cat: string, subCat?: string) => void }> = ({ onNavigate, onProductClick, allProducts, onSelectCategory }) => (
+const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (p: Product) => void; allProducts: Product[]; onSelectCategory: (cat: string, subCat?: string) => void; config: StoreConfig }> = ({ onNavigate, onProductClick, allProducts, onSelectCategory, config }) => (
   // FIXED: Adjusted top padding to clear the double header on desktop
   <div className="pt-24 md:pt-40">
     <div className="bg-neon-yellow text-black overflow-hidden py-1 border-y-2 border-black relative z-30">
@@ -4280,7 +4290,7 @@ const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (
         </div>
     </div>
     
-    <HeroCarousel onNavigate={onNavigate} />
+    <HeroCarousel onNavigate={onNavigate} slides={config.heroSlides} />
 
     {/* BRAND VALUES - OPTIMIZED FOR MOBILE */}
     <section className="py-8 md:py-10 bg-black/40 border-y border-white/5">
@@ -4327,7 +4337,7 @@ const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (
        </div>
        
        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-           {Object.entries(CATEGORY_TREE).map(([cat, subcategories], i) => {
+           {Object.entries(getCategoryTree(config)).map(([cat, subcategories], i) => {
                const categoryProducts = allProducts.filter(p => p.category === cat);
                const productImage = categoryProducts.length > 0 
                    ? categoryProducts[0].images[0] 
@@ -4380,6 +4390,7 @@ const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (
         allProducts={allProducts}
         onProductClick={onProductClick}
         onNavigate={onNavigate}
+        config={config}
     />
     
     {/* FLASH SALE BANNER - 新增 */}
@@ -4471,7 +4482,35 @@ const App: React.FC = () => {
   const [currency, setCurrency] = useState('USD');  // 货币状态
   const [config, setConfig] = useState<StoreConfig>({  // 商店配置
     storeName: 'NEBULA',
-    heroSlides: [],
+    heroSlides: [
+      {
+        id: '1',
+        image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070',
+        title1: '',
+        title2: '',
+        subtitle: '',
+        desc: '',
+        cta: 'SHOP NOW'
+      },
+      {
+        id: '2',
+        image: 'https://images.unsplash.com/photo-1574169208507-84376144848b?auto=format&fit=crop&q=80&w=2070',
+        title1: '',
+        title2: '',
+        subtitle: '',
+        desc: '',
+        cta: 'SHOP NOW'
+      },
+      {
+        id: '3',
+        image: 'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&q=80&w=2070',
+        title1: '',
+        title2: '',
+        subtitle: '',
+        desc: '',
+        cta: 'SHOP NOW'
+      }
+    ],
     sectors: [],
     categories: ['IMPORTED']
   });
@@ -4846,7 +4885,7 @@ const App: React.FC = () => {
             onToggleSettings={() => setIsSettingsOpen(true)}
         />
         
-        <DesktopCategoryNav onSelect={navigateToCategory} />
+        <DesktopCategoryNav onSelect={navigateToCategory} config={config} />
 
         {/* Mobile Category Bar: now rendered in App for better persistence */}
         {(view === 'HOME' || view === 'SHOP') && (
@@ -4854,7 +4893,8 @@ const App: React.FC = () => {
                 onSelect={(cat) => {
                     navigateToCategory(cat);
                 }} 
-                activeCat={categoryFilter} 
+                activeCat={categoryFilter}
+                config={config}
             />
         )}
 
@@ -4909,6 +4949,7 @@ const App: React.FC = () => {
                     onProductClick={navigateToProduct}
                     allProducts={products}
                     onSelectCategory={navigateToCategory}
+                    config={config}
                 />
             )}
             
@@ -4918,6 +4959,7 @@ const App: React.FC = () => {
                     initialSearch={searchQuery}
                     allProducts={products}
                     initialCategory={categoryFilter}
+                    config={config}
                 />
             )}
 
