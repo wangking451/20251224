@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>数据库测试</title>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    window.supabaseLib = { createClient }
+  </script>
+  <style>
+    body { 
+      font-family: monospace; 
+      padding: 20px; 
+      background: #1a1a1a; 
+      color: #0f0; 
+    }
+    button { 
+      margin: 10px 5px; 
+      padding: 10px 20px; 
+      background: #0f0; 
+      border: none; 
+      color: #000; 
+      cursor: pointer; 
+      font-weight: bold;
+    }
+    button:hover { background: #0a0; }
+    pre { 
+      background: #000; 
+      padding: 15px; 
+      border: 1px solid #0f0; 
+      overflow: auto;
+      max-height: 500px;
+    }
+    .error { color: #f00; }
+    .success { color: #0f0; }
+    input { 
+      margin: 10px 0;
+      padding: 8px;
+      width: 400px;
+      background: #000;
+      border: 1px solid #0f0;
+      color: #0f0;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Supabase 数据库测试工具</h1>
+  
+  <div>
+    <h3>1️⃣ 环境变量配置</h3>
+    <label>SUPABASE_URL:</label><br>
+    <input type="text" id="supabaseUrl" placeholder="https://xxx.supabase.co"><br>
+    <label>SUPABASE_ANON_KEY:</label><br>
+    <input type="text" id="supabaseKey" placeholder="eyJhbGciOiJI..."><br>
+    <button onclick="initSupabase()">初始化连接</button>
+  </div>
+
+  <div>
+    <h3>2️⃣ 数据库操作</h3>
+    <button onclick="testConnection()">测试连接</button>
+    <button onclick="checkTable()">检查表结构</button>
+    <button onclick="readConfig()">读取配置</button>
+    <button onclick="readLocalStorage()">读取localStorage</button>
+    <button onclick="saveToDb()">保存localStorage到数据库</button>
+  </div>
+
+  <div>
+    <h3>3️⃣ 结果输出</h3>
+    <pre id="output">等待操作...</pre>
+  </div>
+
+  <script>
+    let supabase = null;
+
+    function log(msg, isError = false) {
+      const output = document.getElementById('output');
+      const className = isError ? 'error' : 'success';
+      output.innerHTML += `<span class="${className}">${new Date().toLocaleTimeString()} - ${msg}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function initSupabase() {
+      const url = document.getElementById('supabaseUrl').value;
+      const key = document.getElementById('supabaseKey').value;
+      
+      if (!url || !key) {
+        log('❌ 请填写 URL 和 KEY', true);
+        return;
+      }
+
+      try {
+        supabase = window.supabaseLib.createClient(url, key);
+        log('✅ Supabase 客户端初始化成功');
+      } catch (error) {
+        log(`❌ 初始化失败: ${error.message}`, true);
+      }
+    }
+
+    async function checkTable() {
+      if (!supabase) {
+        log('❌ 请先初始化 Supabase 连接', true);
+        return;
+      }
+
+      try {
+        log('🔍 检查 store_config 表结构...');
+        
+        // 尝试查询表信息
+        const { data, error } = await supabase
+          .from('store_config')
+          .select('*')
+          .limit(1);
+        
+        if (error) {
+          if (error.code === '42P01') {
+            log('❌ 表 store_config 不存在！', true);
+            log('需要在 Supabase 后台执行建表 SQL', true);
+          } else {
+            log(`❌ 查询失败: ${error.message}`, true);
+            log(`错误代码: ${error.code}`, true);
+          }
+        } else {
+          log('✅ 表 store_config 存在');
+          if (data && data.length > 0) {
+            log('表中字段:');
+            log(JSON.stringify(Object.keys(data[0]), null, 2));
+          } else {
+            log('表为空，无法显示字段结构');
+          }
+        }
+      } catch (error) {
+        log(`❌ 检查异常: ${error.message}`, true);
+      }
+    }
+
+    async function testConnection() {
+      if (!supabase) {
+        log('❌ 请先初始化 Supabase 连接', true);
+        return;
+      }
+
+      try {
+        log('🔍 测试数据库连接...');
+        const { data, error } = await supabase
+          .from('store_config')
+          .select('count')
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+          log(`❌ 连接失败: ${error.message}`, true);
+        } else {
+          log('✅ 数据库连接成功');
+        }
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`, true);
+      }
+    }
+
+    async function readConfig() {
+      if (!supabase) {
+        log('❌ 请先初始化 Supabase 连接', true);
+        return;
+      }
+
+      try {
+        log('🔍 读取数据库配置...');
+        const { data, error } = await supabase
+          .from('store_config')
+          .select('*')
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+          log(`❌ 读取失败: ${error.message}`, true);
+          log(`错误详情: ${JSON.stringify(error, null, 2)}`, true);
+        } else if (!data) {
+          log('⚠️  数据库配置为空');
+        } else {
+          log('✅ 数据库配置:');
+          log(JSON.stringify(data, null, 2));
+        }
+      } catch (error) {
+        log(`❌ 读取异常: ${error.message}`, true);
+      }
+    }
+
+    function readLocalStorage() {
+      log('🔍 读取 localStorage...');
+      const config = localStorage.getItem('CR_STORE_CONFIG');
+      if (config) {
+        log('✅ localStorage 配置:');
+        log(JSON.stringify(JSON.parse(config), null, 2));
+      } else {
+        log('⚠️  localStorage 没有配置数据');
+      }
+    }
+
+    async function saveToDb() {
+      if (!supabase) {
+        log('❌ 请先初始化 Supabase 连接', true);
+        return;
+      }
+
+      const configStr = localStorage.getItem('CR_STORE_CONFIG');
+      if (!configStr) {
+        log('❌ localStorage 没有配置数据', true);
+        return;
+      }
+
+      try {
+        const config = JSON.parse(configStr);
+        log('🔍 准备保存到数据库...');
+        
+        // 转换为 snake_case
+        const dbConfig = {
+          store_name: config.storeName,
+          shop_name: config.shopName,
+          logo_type: config.logoType,
+          logo_image: config.logoImage,
+          marquee_text: config.marqueeText,
+          contact_email: config.contactEmail,
+          hero_slides: config.heroSlides || [],
+          sectors: config.sectors || [],
+          categories: config.categories || [],
+          category_tree: config.categoryTree || [],
+          custom_pages: config.customPages || [],
+          bundle_offers: config.bundleOffers || [],
+          shipping_config: config.shippingConfig,
+          paypal_config: config.paypalConfig,
+          volume_discount_config: config.volumeDiscountConfig,
+          brand_values: config.brandValues || [],
+          social_videos: config.socialVideos || []
+        };
+
+        // 检查是否已存在
+        const { data: existing } = await supabase
+          .from('store_config')
+          .select('id')
+          .single();
+
+        if (existing) {
+          log('📝 更新现有配置...');
+          const { data, error } = await supabase
+            .from('store_config')
+            .update({ ...dbConfig, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+            .select();
+          
+          if (error) {
+            log(`❌ 更新失败: ${error.message}`, true);
+            log(`错误详情: ${JSON.stringify(error, null, 2)}`, true);
+          } else {
+            log('✅ 配置更新成功');
+            log(JSON.stringify(data, null, 2));
+          }
+        } else {
+          log('📝 插入新配置...');
+          const { data, error } = await supabase
+            .from('store_config')
+            .insert([dbConfig])
+            .select();
+          
+          if (error) {
+            log(`❌ 插入失败: ${error.message}`, true);
+            log(`错误详情: ${JSON.stringify(error, null, 2)}`, true);
+          } else {
+            log('✅ 配置插入成功');
+            log(JSON.stringify(data, null, 2));
+          }
+        }
+      } catch (error) {
+        log(`❌ 保存异常: ${error.message}`, true);
+      }
+    }
+  </script>
+</body>
+</html>

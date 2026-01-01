@@ -4464,35 +4464,7 @@ const App: React.FC = () => {
   const [currency, setCurrency] = useState('USD');  // 货币状态
   const [config, setConfig] = useState<StoreConfig>({  // 商店配置
     storeName: 'NEBULA',
-    heroSlides: [
-      {
-        id: '1',
-        image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070',
-        title1: '',
-        title2: '',
-        subtitle: '',
-        desc: '',
-        cta: 'SHOP NOW'
-      },
-      {
-        id: '2',
-        image: 'https://images.unsplash.com/photo-1574169208507-84376144848b?auto=format&fit=crop&q=80&w=2070',
-        title1: '',
-        title2: '',
-        subtitle: '',
-        desc: '',
-        cta: 'SHOP NOW'
-      },
-      {
-        id: '3',
-        image: 'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&q=80&w=2070',
-        title1: '',
-        title2: '',
-        subtitle: '',
-        desc: '',
-        cta: 'SHOP NOW'
-      }
-    ],
+    heroSlides: [],  // 初始为空，等待从数据库加载
     sectors: [],
     categories: ['IMPORTED']
   });
