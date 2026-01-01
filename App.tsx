@@ -8,7 +8,7 @@ import AdminLogin from './components/AdminLogin';
 import { translate, LANGUAGE_CODES } from './services/translation';
 import { convertPrice, formatPrice } from './services/exchangeRate';
 import { isAdminAuthenticated, clearAdminSession, setAdminSession } from './utils/auth';
-import { productsAPI } from './services/supabase';
+import { productsAPI, configAPI } from './services/supabase';
 
 // API 基础 URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';

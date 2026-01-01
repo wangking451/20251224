@@ -57,7 +57,7 @@ export interface HeroSlide {
   title2: string;
   subtitle: string;
   desc: string;
-  cta: string;
+  cta?: string;
 }
 
 export interface SectorCard {

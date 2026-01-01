@@ -1721,20 +1721,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                                  placeholder="https://..."
                                />
                              </div>
-                             <div>
-                               <label className="block text-xs text-gray-400 mb-2">按钮文字 (CTA Button)</label>
-                               <input 
-                                 type="text" 
-                                 value={slide.cta}
-                                 onChange={e => {
-                                   const newSlides = [...config.heroSlides];
-                                   newSlides[idx].cta = e.target.value;
-                                   onUpdateConfig({...config, heroSlides: newSlides});
-                                 }}
-                                 className="w-full bg-black/60 border border-white/20 p-2 text-white text-sm rounded focus:border-neon-cyan outline-none"
-                                 placeholder="如: SHOP NOW"
-                               />
-                             </div>
                            </div>
                            <button 
                              onClick={() => {
@@ -1761,8 +1747,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                             title1: '',
                             title2: '',
                             subtitle: '',
-                            desc: '',
-                            cta: 'SHOP NOW'
+                            desc: ''
                           }];
                           onUpdateConfig({...config, heroSlides: newSlides});
                         }}
