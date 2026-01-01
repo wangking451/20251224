@@ -104,11 +104,56 @@ export const configAPI = {
       .single()
     
     if (error && error.code !== 'PGRST116') throw error
-    return data || {}
+    
+    // 转换 snake_case 到 camelCase
+    if (data) {
+      return {
+        storeName: data.store_name,
+        shopName: data.shop_name,
+        logoType: data.logo_type,
+        logoImage: data.logo_image,
+        marqueeText: data.marquee_text,
+        contactEmail: data.contact_email,
+        heroSlides: data.hero_slides || [],
+        sectors: data.sectors || [],
+        categories: data.categories || [],
+        categoryTree: data.category_tree || [],
+        customPages: data.custom_pages || [],
+        bundleOffers: data.bundle_offers || [],
+        shippingConfig: data.shipping_config,
+        paypalConfig: data.paypal_config,
+        volumeDiscountConfig: data.volume_discount_config,
+        brandValues: data.brand_values || [],
+        socialVideos: data.social_videos || []
+      }
+    }
+    
+    return {}
   },
 
   // 更新配置
   update: async (config: any) => {
+    // 转换 camelCase 到 snake_case
+    const dbConfig = {
+      store_name: config.storeName,
+      shop_name: config.shopName,
+      logo_type: config.logoType,
+      logo_image: config.logoImage,
+      marquee_text: config.marqueeText,
+      contact_email: config.contactEmail,
+      hero_slides: config.heroSlides || [],
+      sectors: config.sectors || [],
+      categories: config.categories || [],
+      category_tree: config.categoryTree || [],
+      custom_pages: config.customPages || [],
+      bundle_offers: config.bundleOffers || [],
+      shipping_config: config.shippingConfig,
+      paypal_config: config.paypalConfig,
+      volume_discount_config: config.volumeDiscountConfig,
+      brand_values: config.brandValues || [],
+      social_videos: config.socialVideos || []
+    };
+    
     const { data: existing } = await supabase
       .from('store_config')
       .select('id')
@@ -117,7 +162,7 @@ export const configAPI = {
     if (existing) {
       const { data, error } = await supabase
         .from('store_config')
-        .update({ ...config, updated_at: new Date().toISOString() })
+        .update({ ...dbConfig, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
         .select()
       
@@ -126,7 +171,7 @@ export const configAPI = {
     } else {
       const { data, error } = await supabase
         .from('store_config')
-        .insert([config])
+        .insert([dbConfig])
         .select()
       
       if (error) throw error
