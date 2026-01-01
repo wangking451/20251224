@@ -4647,15 +4647,38 @@ const App: React.FC = () => {
     
     loadProducts();
     
-    // 加载商店配置
-    const storedConfig = localStorage.getItem('CR_STORE_CONFIG');
-    if (storedConfig) {
+    // 加载商店配置（从数据库，localStorage作为备份）
+    const loadConfig = async () => {
       try {
-        setConfig(JSON.parse(storedConfig));
-      } catch (e) {
-        console.error('Failed to parse stored config', e);
+        const dbConfig = await configAPI.get();
+        if (dbConfig && Object.keys(dbConfig).length > 0) {
+          setConfig(dbConfig as StoreConfig);
+          // 同步到 localStorage 作为备份
+          localStorage.setItem('CR_STORE_CONFIG', JSON.stringify(dbConfig));
+        } else {
+          // 数据库为空，尝试从 localStorage 加载
+          const storedConfig = localStorage.getItem('CR_STORE_CONFIG');
+          if (storedConfig) {
+            const parsedConfig = JSON.parse(storedConfig);
+            setConfig(parsedConfig);
+            // 同步到数据库
+            await configAPI.update(parsedConfig);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load config from database, falling back to localStorage', error);
+        // 数据库加载失败，回退到 localStorage
+        const storedConfig = localStorage.getItem('CR_STORE_CONFIG');
+        if (storedConfig) {
+          try {
+            setConfig(JSON.parse(storedConfig));
+          } catch (e) {
+            console.error('Failed to parse stored config', e);
+          }
+        }
       }
-    }
+    };
+    loadConfig();
     
     const verified = localStorage.getItem('nebula_age_verified');
     if (verified) setAgeVerified(true);
@@ -4916,9 +4939,17 @@ const App: React.FC = () => {
               setProducts(newProducts);
               localStorage.setItem('CR_CATALOG_DATA', JSON.stringify(newProducts));
             }}
-            onUpdateConfig={(newConfig) => {
+            onUpdateConfig={async (newConfig) => {
               setConfig(newConfig);
-              localStorage.setItem('CR_STORE_CONFIG', JSON.stringify(newConfig));
+              // 同时保存到数据库和 localStorage
+              try {
+                await configAPI.update(newConfig);
+                localStorage.setItem('CR_STORE_CONFIG', JSON.stringify(newConfig));
+              } catch (error) {
+                console.error('Failed to save config to database', error);
+                // 至少保存到 localStorage
+                localStorage.setItem('CR_STORE_CONFIG', JSON.stringify(newConfig));
+              }
             }}
             onExit={() => setIsAdminOpen(false)}
           />
