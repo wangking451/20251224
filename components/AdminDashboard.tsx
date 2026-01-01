@@ -1704,7 +1704,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                 <section>
                    <h2 className="text-xl font-display text-neon-yellow mb-6 pb-2 border-b border-white/10">轮播图 (Hero Carousel) <span className="text-xs text-gray-500 font-normal ml-2">推荐: 1920x600px</span></h2>
                    <div className="space-y-4">
-                      {config.heroSlides.map((slide, idx) => (
+                      {(config.heroSlides || []).map((slide, idx) => (
                         <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded space-y-3">
                            <div className="space-y-3">
                              <div>
@@ -1713,7 +1713,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                                  type="text" 
                                  value={slide.image}
                                  onChange={e => {
-                                   const newSlides = [...config.heroSlides];
+                                   const newSlides = [...(config.heroSlides || [])];
                                    newSlides[idx].image = e.target.value;
                                    onUpdateConfig({...config, heroSlides: newSlides});
                                  }}
@@ -1724,12 +1724,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                            </div>
                            <button 
                              onClick={() => {
-                               if (config.heroSlides.length <= 1) {
+                               if ((config.heroSlides || []).length <= 1) {
                                  alert('至少需要保留一张轮播图！');
                                  return;
                                }
                                if (confirm('确定要删除这张轮播图吗？')) {
-                                 const newSlides = config.heroSlides.filter((_, i) => i !== idx);
+                                 const newSlides = (config.heroSlides || []).filter((_, i) => i !== idx);
                                  onUpdateConfig({...config, heroSlides: newSlides});
                                }
                              }}
@@ -1741,7 +1741,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                       ))}
                       <button 
                         onClick={() => {
-                          const newSlides = [...config.heroSlides, {
+                          const newSlides = [...(config.heroSlides || []), {
                             id: Date.now().toString(),
                             image: '',
                             title1: '',

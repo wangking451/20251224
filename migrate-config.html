@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配置迁移工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #3a3a3a;
+        }
+        h1 {
+            color: #00ffff;
+            margin-bottom: 30px;
+        }
+        .step {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 5px;
+            border-left: 3px solid #00ffff;
+        }
+        button {
+            background: #00ffff;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #00cccc;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #000;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #00ff00;
+        }
+        .error {
+            color: #ff0000;
+        }
+        .warning {
+            color: #ffaa00;
+        }
+        .info {
+            color: #00ffff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 配置数据迁移工具</h1>
+        
+        <div class="step">
+            <h3>步骤 1: 读取本地配置</h3>
+            <p>从 localStorage 读取您的商店配置数据</p>
+            <button id="readBtn" onclick="readLocalConfig()">读取本地配置</button>
+            <div id="readOutput" class="output" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 2: 上传到数据库</h3>
+            <p>将配置数据上传到 Supabase 数据库</p>
+            <button id="uploadBtn" onclick="uploadToDatabase()" disabled>上传到数据库</button>
+            <div id="uploadOutput" class="output" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>步骤 3: 验证迁移</h3>
+            <p>验证数据是否成功迁移</p>
+            <button id="verifyBtn" onclick="verifyMigration()" disabled>验证数据</button>
+            <div id="verifyOutput" class="output" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/+esm';
+
+        // 从环境变量或直接配置（请替换为您的实际值）
+        const SUPABASE_URL = 'https://xzqshxjaqnqbamqcxovb.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6cXNoeGphcW5xYmFtcWN4b3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5NTA1NjYsImV4cCI6MjA1MDUyNjU2Nn0.bvAQzK7IeAGrwTjZh_VnhOdBe-uqNAkEajbJj9zT4Bs';
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let localConfig = null;
+
+        window.readLocalConfig = function() {
+            const output = document.getElementById('readOutput');
+            output.style.display = 'block';
+            output.innerHTML = '<span class="info">正在读取 localStorage...</span>\n';
+
+            try {
+                const storedConfig = localStorage.getItem('CR_STORE_CONFIG');
+                if (storedConfig) {
+                    localConfig = JSON.parse(storedConfig);
+                    output.innerHTML += '<span class="success">✓ 成功读取配置数据</span>\n\n';
+                    output.innerHTML += '<span class="info">配置数据预览：</span>\n';
+                    output.innerHTML += JSON.stringify(localConfig, null, 2);
+                    
+                    document.getElementById('uploadBtn').disabled = false;
+                } else {
+                    output.innerHTML += '<span class="warning">⚠ localStorage 中没有找到配置数据</span>\n';
+                    output.innerHTML += '<span class="info">提示: 请先在网站后台修改配置，然后刷新此页面重试</span>\n';
+                }
+            } catch (error) {
+                output.innerHTML += `<span class="error">✗ 读取失败: ${error.message}</span>\n`;
+            }
+        };
+
+        window.uploadToDatabase = async function() {
+            const output = document.getElementById('uploadOutput');
+            output.style.display = 'block';
+            output.innerHTML = '<span class="info">正在上传到 Supabase...</span>\n';
+
+            try {
+                // 先检查是否已有配置
+                const { data: existing, error: fetchError } = await supabase
+                    .from('store_config')
+                    .select('id')
+                    .single();
+
+                if (fetchError && fetchError.code !== 'PGRST116') {
+                    throw fetchError;
+                }
+
+                let result;
+                if (existing) {
+                    // 更新现有配置
+                    output.innerHTML += '<span class="info">检测到已有配置，将更新...</span>\n';
+                    const { data, error } = await supabase
+                        .from('store_config')
+                        .update({ 
+                            ...localConfig, 
+                            updated_at: new Date().toISOString() 
+                        })
+                        .eq('id', existing.id)
+                        .select();
+                    
+                    if (error) throw error;
+                    result = data[0];
+                } else {
+                    // 插入新配置
+                    output.innerHTML += '<span class="info">未找到现有配置，将创建新记录...</span>\n';
+                    const { data, error } = await supabase
+                        .from('store_config')
+                        .insert([localConfig])
+                        .select();
+                    
+                    if (error) throw error;
+                    result = data[0];
+                }
+
+                output.innerHTML += '<span class="success">✓ 配置已成功上传到数据库！</span>\n\n';
+                output.innerHTML += '<span class="info">数据库返回：</span>\n';
+                output.innerHTML += JSON.stringify(result, null, 2);
+                
+                document.getElementById('verifyBtn').disabled = false;
+            } catch (error) {
+                output.innerHTML += `<span class="error">✗ 上传失败: ${error.message}</span>\n`;
+                console.error('Upload error:', error);
+            }
+        };
+
+        window.verifyMigration = async function() {
+            const output = document.getElementById('verifyOutput');
+            output.style.display = 'block';
+            output.innerHTML = '<span class="info">正在验证数据...</span>\n';
+
+            try {
+                const { data, error } = await supabase
+                    .from('store_config')
+                    .select('*')
+                    .single();
+
+                if (error) throw error;
+
+                output.innerHTML += '<span class="success">✓ 数据库中的配置：</span>\n\n';
+                output.innerHTML += JSON.stringify(data, null, 2);
+                output.innerHTML += '\n\n<span class="success">✓ 迁移成功！</span>\n';
+                output.innerHTML += '<span class="info">现在您可以在无痕浏览器中打开网站，应该能看到所有配置了。</span>\n';
+            } catch (error) {
+                output.innerHTML += `<span class="error">✗ 验证失败: ${error.message}</span>\n`;
+            }
+        };
+    </script>
+</body>
+</html>
