@@ -220,7 +220,7 @@ const RetroButton: React.FC<{
     <button 
       onClick={onClick}
       disabled={disabled}
-      className={`relative px-8 py-3 font-display font-bold text-sm uppercase tracking-wider skew-button flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+      className={`relative px-4 py-2 md:px-8 md:py-3 font-display font-bold text-xs md:text-sm uppercase tracking-wider skew-button flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed ${styles[variant]} ${className}`}
     >
       <span className="transform group-hover:skew-x-2 transition-transform inline-flex items-center gap-2">
         {icon}
@@ -496,7 +496,7 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void; slides?: any[
   const handleCTAClick = () => onNavigate('SHOP');
 
   return (
-    <section className="relative w-full h-[600px] overflow-hidden">
+    <section className="relative w-full h-[300px] md:h-[600px] overflow-hidden">
         {displaySlides.map((slide, index) => (
             <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === current ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
                 {/* Background Image - 固定高度 */}
@@ -511,20 +511,13 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void; slides?: any[
             </div>
         ))}
 
-        {/* Content - 只保留 CTA 按钮，位置靠底部 */}
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 animate-fade-in">
-             {/* 只保留 CTA 按钮 */}
-             <div className="flex gap-6 justify-center opacity-0 animate-[fadeIn_0.5s_ease-out_0.6s_forwards]">
-                <RetroButton onClick={handleCTAClick}>{getTranslation(displaySlides[current].cta || 'SHOP NOW')}</RetroButton>
-             </div>
-        </div>
         
         {/* Navigation Arrows */}
-        <button onClick={prevSlide} className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
-            <ChevronLeft size={48} />
+        <button onClick={prevSlide} className="absolute left-2 md:left-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-1 md:p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
+            <ChevronLeft className="w-6 h-6 md:w-12 md:h-12" />
         </button>
-        <button onClick={nextSlide} className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
-            <ChevronRight size={48} />
+        <button onClick={nextSlide} className="absolute right-2 md:right-10 top-1/2 -translate-y-1/2 z-30 text-white/30 hover:text-neon-cyan transition-colors p-1 md:p-2 border border-transparent hover:border-neon-cyan bg-black/20 backdrop-blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300">
+            <ChevronRight className="w-6 h-6 md:w-12 md:h-12" />
         </button>
 
         {/* Dots */}
