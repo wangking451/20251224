@@ -449,55 +449,35 @@ const FeaturedProductsSection: React.FC<{
 
 // Updated: Hero Carousel reading from config.heroSlides
 const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void; slides?: any[] }> = ({ onNavigate, slides }) => {
-  // 如果没有传入 slides 或为空，使用默认数据
-  const displaySlides = (slides && slides.length > 0) ? slides : [
-    {
-      id: 1,
-      image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070',
-      subtitle: 'EST. 2084 // TOKYO SECTOR 7',
-      title1: 'Digital',
-      title2: 'Sunset',
-      desc: 'Bridging the gap between biological desire and digital perfection. High-fidelity haptics for the modern soul.',
-      cta: 'SHOP NOW'
-    },
-    {
-      id: 2,
-      image: 'https://images.unsplash.com/photo-1574169208507-84376144848b?auto=format&fit=crop&q=80&w=2070', 
-      subtitle: 'SYSTEM UPGRADE AVAILABLE',
-      title1: 'Cyber',
-      title2: 'Flesh',
-      desc: 'Experience the new wave of sensory augmentation. Resistance is futile when pleasure is this precise.',
-      cta: 'SHOP NOW'
-    },
-    {
-      id: 3,
-      image: 'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?auto=format&fit=crop&q=80&w=2070', 
-      subtitle: 'SECURE ENCRYPTED UPLINK',
-      title1: 'Neural',
-      title2: 'Sync',
-      desc: 'Direct interface protocols for maximum transmission speed. Your secrets are safe in the void.',
-      cta: 'SHOP NOW'
-    }
-  ];
+  // 如果没有轮播图数据，不渲染
+  if (!slides || slides.length === 0) {
+    return (
+      <section className="relative w-full h-[300px] md:h-[600px] bg-black/80 flex items-center justify-center">
+        <div className="text-gray-600 text-sm font-display tracking-wider">
+          LOADING NEURAL INTERFACE...
+        </div>
+      </section>
+    );
+  }
 
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrent(prev => (prev + 1) % displaySlides.length);
+      setCurrent(prev => (prev + 1) % slides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [displaySlides.length]);
+  }, [slides.length]);
 
-  const nextSlide = () => setCurrent(prev => (prev + 1) % displaySlides.length);
-  const prevSlide = () => setCurrent(prev => (prev - 1 + displaySlides.length) % displaySlides.length);
+  const nextSlide = () => setCurrent(prev => (prev + 1) % slides.length);
+  const prevSlide = () => setCurrent(prev => (prev - 1 + slides.length) % slides.length);
   
   // CTA按钮统一跳转到商店
   const handleCTAClick = () => onNavigate('SHOP');
 
   return (
     <section className="relative w-full h-[300px] md:h-[600px] overflow-hidden">
-        {displaySlides.map((slide, index) => (
+        {slides.map((slide, index) => (
             <div key={slide.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${index === current ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
                 {/* Background Image - 固定高度 */}
                 <img 
@@ -522,7 +502,7 @@ const HeroCarousel: React.FC<{ onNavigate: (v: ViewState) => void; slides?: any[
 
         {/* Dots */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4">
-            {displaySlides.map((_, idx) => (
+            {slides.map((_, idx) => (
                 <button 
                     key={idx} 
                     onClick={() => setCurrent(idx)}
