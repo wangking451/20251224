@@ -1,7 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, Package, Palette, Settings, Upload, Plus, Trash2, Save, 
-  Image as ImageIcon, X, ChevronRight, ChevronDown, LogOut, Download, AlertTriangle, CheckCircle,
+  Image as ImageIcon, X, ChevronRight, ChevronDown, ChevronUp, LogOut, Download, AlertTriangle, CheckCircle,
   Search, Video, Layers, List, Tag, Edit3, FileSpreadsheet, RefreshCw, FileText, Globe,
   Shield, Info, Image, CreditCard, AlertCircle, ShoppingBag, Truck, Eye, DollarSign, Link
 } from 'lucide-react';
@@ -62,14 +62,16 @@ const processImageFile = async (file: File): Promise<string> => {
 
 // 单个分类项组件
 const CategoryItem: React.FC<{
-  category: { name: string; subcategories?: string[] };
+  category: { name: string; subcategories?: string[]; homeImage?: string };
   productCount: number;
-  categoryList: { name: string; subcategories?: string[] }[];
+  categoryList: { name: string; subcategories?: string[]; homeImage?: string }[];
   onUpdateConfig: (config: StoreConfig) => void;
   onUpdateProducts: (products: Product[]) => void;
   config: StoreConfig;
   products: Product[];
-}> = ({ category, productCount, categoryList, onUpdateConfig, onUpdateProducts, config, products }) => {
+  index: number;
+  totalCount: number;
+}> = ({ category, productCount, categoryList, onUpdateConfig, onUpdateProducts, config, products, index, totalCount }) => {
   const [expanded, setExpanded] = useState(false);
   
   return (
@@ -89,6 +91,38 @@ const CategoryItem: React.FC<{
         </div>
         
         <div className="flex items-center gap-2">
+          {/* 上移按钮 */}
+          <button
+            onClick={() => {
+              if (index === 0) return;
+              const newList = [...categoryList];
+              [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
+              onUpdateConfig({...config, categoryTree: newList as Category[]});
+            }}
+            disabled={index === 0}
+            className="p-1 text-gray-400 hover:text-neon-cyan disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="上移"
+          >
+            <ChevronUp size={16}/>
+          </button>
+          
+          {/* 下移按钮 */}
+          <button
+            onClick={() => {
+              if (index === totalCount - 1) return;
+              const newList = [...categoryList];
+              [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+              onUpdateConfig({...config, categoryTree: newList as Category[]});
+            }}
+            disabled={index === totalCount - 1}
+            className="p-1 text-gray-400 hover:text-neon-cyan disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="下移"
+          >
+            <ChevronDown size={16}/>
+          </button>
+          
+          <div className="w-px h-4 bg-white/10"></div>
+          
           <button 
             onClick={() => {
               const subName = prompt(`为 "${category.name}" 添加子分类:`);
@@ -156,9 +190,58 @@ const CategoryItem: React.FC<{
         </div>
       </div>
       
+      {/* 首页分类图片设置（展开时显示） */}
+      {expanded && (
+        <div className="bg-black/20 border-t border-white/10 p-4">
+          <div className="mb-4">
+            <label className="block text-xs text-neon-yellow font-bold mb-2 flex items-center gap-2">
+              <ImageIcon size={14}/> 首页分类卡片图片（可选）
+            </label>
+            <div className="flex gap-3 items-start">
+              {category.homeImage && (
+                <div className="w-24 h-24 bg-black border border-white/20 rounded overflow-hidden flex-shrink-0">
+                  <img src={category.homeImage} className="w-full h-full object-cover" alt="分类图片"/>
+                </div>
+              )}
+              <div className="flex-1 space-y-2">
+                <input 
+                  type="text"
+                  value={category.homeImage || ''}
+                  onChange={e => {
+                    const updatedTree = categoryList.map(cat => 
+                      cat.name === category.name ? { ...cat, homeImage: e.target.value } : cat
+                    ) as Category[];
+                    onUpdateConfig({...config, categoryTree: updatedTree});
+                  }}
+                  className="w-full bg-black border border-white/20 p-2 text-white text-sm rounded focus:border-neon-yellow outline-none"
+                  placeholder="输入图片链接 URL"
+                />
+                <p className="text-xs text-gray-500">
+                  💡 推荐尺寸 600x600px，如果不设置将自动使用该分类下第一个商品的主图
+                </p>
+                {category.homeImage && (
+                  <button
+                    onClick={() => {
+                      const updatedTree = categoryList.map(cat => 
+                        cat.name === category.name ? { ...cat, homeImage: undefined } : cat
+                      ) as Category[];
+                      onUpdateConfig({...config, categoryTree: updatedTree});
+                    }}
+                    className="text-xs text-red-400 hover:text-red-300"
+                  >
+                    清除图片
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* 子分类列表（展开时显示） */}
       {expanded && category.subcategories && category.subcategories.length > 0 && (
         <div className="bg-black/30 border-t border-white/10 p-4">
+          <h4 className="text-xs text-gray-400 font-bold mb-3">子分类列表</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {category.subcategories.map((sub, subIdx) => (
               <div key={subIdx} className="flex items-center justify-between bg-white/5 p-3 rounded group hover:bg-white/10 transition-colors">
@@ -212,7 +295,7 @@ const CategoryItem: React.FC<{
       {expanded && (!category.subcategories || category.subcategories.length === 0) && (
         <div className="bg-black/30 border-t border-white/10 p-6 text-center">
           <p className="text-gray-500 text-sm">该分类还没有子分类</p>
-          <p className="text-xs text-gray-600 mt-1">点击"添加子分类"按钮开始创建</p>
+          <p className="text-xs text-gray-600 mt-1">点击“添加子分类”按钮开始创建</p>
         </div>
       )}
     </div>
@@ -1513,6 +1596,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                            onUpdateProducts={onUpdateProducts}
                            config={config}
                            products={products}
+                           index={idx}
+                           totalCount={categoryList.length}
                          />
                        );
                      });
@@ -1533,7 +1618,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                    </h4>
                    <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
                       <li>支持二级分类：主分类下可添加多个子分类，前台将以下拉菜单形式展示</li>
-                      <li>点击主分类左侧的箭头可展开/折叠查看子分类</li>
+                      <li>点击主分类左侧的箭头可展开/折叠查看子分类和首页图片设置</li>
+                      <li>分类排序：使用上下箭头按钮调整分类显示顺序，首页和前台导航将按此顺序展示</li>
+                      <li>首页分类图片：展开后可设置首页分类卡片显示的图片，未设置则自动使用该分类下第一个商品的主图</li>
                       <li>修改主分类名称时，会自动更新该分类下所有商品</li>
                       <li>删除主分类后，该分类下的商品不会被删除，但会变为未分类</li>
                       <li>子分类仅用于前台导航展示，不影响商品筛选（商品仍按主分类筛选）</li>
@@ -1835,10 +1922,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ products, config
                 <div className="bg-yellow-500/10 border border-yellow-500/30 p-6 rounded-lg">
                    <h3 className="font-bold text-yellow-400 mb-2">💡 其他组件说明</h3>
                    <ul className="text-sm text-gray-300 space-y-1">
-                      <li>• <strong>新品推荐</strong>: 自动显示前8个商品，在 "商品管理" 中编辑</li>
-                      <li>• <strong>分类展示</strong>: 自动使用每个分类的第一个商品图片，建议商品图片 800x1000px</li>
-                      <li>• <strong>热销商品</strong>: 显示商品第4-7个商品，在 "商品管理" 中编辑</li>
-                      <li>• <strong>精选推荐</strong>: 显示商品第8-10个商品，在 "商品管理" 中编辑</li>
+                      <li>• <strong>新品推荐</strong>: 自动显示前8个商品，在 “商品管理” 中编辑</li>
+                      <li>• <strong>分类展示</strong>: 优先使用在 "分类管理" 中设置的首页图片（建议 600x600px），未设置则自动使用该分类第一个商品图片</li>
+                      <li>• <strong>热销商品</strong>: 显示商品第4-7个商品，在 “商品管理” 中编辑</li>
+                      <li>• <strong>精选推荐</strong>: 显示商品第8-10个商品，在 “商品管理” 中编辑</li>
                       <li>• <strong>用户评价</strong>: 固定9条评价，在 products.ts 中修改</li>
                    </ul>
                 </div>

@@ -4339,9 +4339,13 @@ const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (
        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
            {Object.entries(getCategoryTree(config)).map(([cat, subcategories], i) => {
                const categoryProducts = allProducts.filter(p => p.category === cat);
-               const productImage = categoryProducts.length > 0 
-                   ? categoryProducts[0].images[0] 
-                   : 'https://images.unsplash.com/photo-1526566661780-1a67ea3c863e?auto=format&fit=crop&q=80&w=800';
+               
+               // 获取分类图片：优先使用 homeImage，否则使用第一个商品图片
+               const categoryInfo = config.categoryTree?.find(c => c.name === cat);
+               const productImage = categoryInfo?.homeImage 
+                   || (categoryProducts.length > 0 
+                       ? categoryProducts[0].images[0] 
+                       : 'https://images.unsplash.com/photo-1526566661780-1a67ea3c863e?auto=format&fit=crop&q=80&w=800');
                
                const colors = [
                    { border: 'neon-cyan', text: 'text-neon-cyan' },
@@ -4361,24 +4365,9 @@ const HomeView: React.FC<{ onNavigate: (v: ViewState) => void; onProductClick: (
                            <img 
                                src={productImage}
                                alt={cat}
-                               className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" 
+                               className="w-full h-full object-cover group-hover:scale-110 transition-all duration-700" 
                            />
                        </div>
-                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                       <div className="absolute top-2 right-2 z-20">
-                           <div className={`bg-black/80 backdrop-blur-sm px-2 py-1 text-[10px] font-display font-bold ${color.text}`}>
-                               {categoryProducts.length || subcategories.length}
-                           </div>
-                       </div>
-                       <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 z-10">
-                           <h3 className={`font-display text-xl md:text-2xl text-white font-black uppercase mb-1 group-hover:${color.text} transition-colors drop-shadow-[0_2px_10px_rgba(0,0,0,1)]`}>
-                               {cat}
-                           </h3>
-                           <div className="flex items-center gap-1 text-[10px] text-gray-400 group-hover:text-white transition-colors font-display uppercase">
-                               <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
-                           </div>
-                       </div>
-                       <div className={`absolute bottom-0 left-0 w-full h-0.5 bg-${color.border} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
                    </div>
                );
            })}
@@ -4901,7 +4890,7 @@ const App: React.FC = () => {
         <SearchBar 
             isOpen={isSearchOpen} 
             onClose={() => setIsSearchOpen(false)} 
-            onSearch={(q) => { setSearchQuery(q); setView('SHOP'); setIsSearchOpen(false); }}
+            onSearch={(q) => { setSearchQuery(q); setView('SHOP'); }}
         />
         
         <SettingsModal 

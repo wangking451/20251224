@@ -137,6 +137,7 @@ export interface Order {
 export interface Category {
   name: string;  // 主分类名称，如 "DILDOS"
   subcategories: string[];  // 二级分类，如 ["Realistic", "Fantasy", ...]
+  homeImage?: string;  // 首页分类卡片图片（可选）
 }
 
 export interface StoreConfig {
